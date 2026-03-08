@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * platform related header file
+ */
+
+#ifndef _MESON_LEDS_PLAT_H_
+#define _MESON_LEDS_PLAT_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+/*
+ * pwm SC2 leds config
+ */
+#include <leds_state.h>
+
+#define LED_BREATH_MAX_COUNT 5
+
+extern LedDevice_t MesonLeds[];
+
+enum led_pwm_id {
+	LED_PWM_A = 0,
+	LED_PWM_B,
+	LED_PWM_C,
+	LED_PWM_D,
+	LED_PWM_E,
+	LED_PWM_F,
+	LED_PWM_INVALID,
+};
+
+enum led_id {
+	LED_ID_0 = 0,
+#ifdef SHINE_PROJECT
+	LED_ID_1 = 1,
+#endif
+	LED_ID_MAX,
+};
+
+int32_t get_led_breath_len(uint32_t breath_id);
+int32_t vLedPinmuxInit(void);
+int32_t vLedPlatInit(int32_t ** stickmem);
+
+#ifdef __cplusplus
+}
+#endif
+#endif	/* _MESON_PWM_PLAT_H_ */

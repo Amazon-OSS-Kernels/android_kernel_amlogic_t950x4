@@ -1,0 +1,21 @@
+
+SOC=t5d
+ARCH_CPU=RISC_V_N205
+#ARCH_CPU=RISCV_N200
+BOARD=t5d_am301_v1
+
+ifeq ($(TARGET_PRODUCT), shine)
+CFLAGS += -DSHINE_PROJECT
+endif
+
+ifeq ($(TARGET_PRODUCT), dahlia)
+CFLAGS += -DDAHLIA_PROJECT
+endif
+
+ifeq ($(TARGET_PRODUCT), hadrian)
+CFLAGS += -DHADRIAN_PROJECT
+endif
+
+ifeq ($(TARGET_PRODUCT), almond)
+CFLAGS += -DALMOND_PROJECT
+endif
