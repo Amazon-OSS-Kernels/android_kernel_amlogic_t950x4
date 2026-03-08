@@ -826,8 +826,8 @@ static void vdec_update_buff_status(void)
 			core->stream_buff_flag |= vdec->core_mask;
 		}
 		/* slave el pre_decode_level wp update */
-		if ((is_support_no_parser()) && (vdec->slave)) {
-			STBUF_WRITE(&vdec->slave->vbuf, set_wp,
+		if ((is_support_no_parser()) && (vdec->slav)) {
+			STBUF_WRITE(&vdec->slav->vbuf, set_wp,
 				STBUF_READ(&vdec->vbuf, get_wp));
 		}
 	}
@@ -887,8 +887,8 @@ int vdec_set_trickmode(struct vdec_s *vdec, unsigned long trickmode)
 	if (vdec->set_trickmode) {
 		r = vdec->set_trickmode(vdec, trickmode);
 
-		if ((r == 0) && (vdec->slave) && (vdec->slave->set_trickmode))
-			r = vdec->slave->set_trickmode(vdec->slave,
+		if ((r == 0) && (vdec->slav) && (vdec->slav->set_trickmode))
+			r = vdec->slav->set_trickmode(vdec->slav,
 				trickmode);
 		return r;
 	}
@@ -1174,7 +1174,7 @@ struct vdec_s *vdec_create(struct stream_port_s *port,
 		vdec->input.vdec_up = vdec_up;
 		if (master) {
 			vdec->master = master;
-			master->slave = vdec;
+			master->slav = vdec;
 			master->sched = 1;
 		}
 		if (enable_mvdec_info) {
@@ -1200,9 +1200,9 @@ int vdec_set_format(struct vdec_s *vdec, int format)
 	vdec->format = format;
 	vdec->port_flag |= PORT_FLAG_VFORMAT;
 
-	if (vdec->slave) {
-		vdec->slave->format = format;
-		vdec->slave->port_flag |= PORT_FLAG_VFORMAT;
+	if (vdec->slav) {
+		vdec->slav->format = format;
+		vdec->slav->port_flag |= PORT_FLAG_VFORMAT;
 	}
 	//trace_vdec_set_format(vdec, format);/*DEBUG_TMP*/
 
@@ -1307,8 +1307,8 @@ static struct vdec_s *vdec_get_associate(struct vdec_s *vdec)
 {
 	if (vdec->master)
 		return vdec->master;
-	else if (vdec->slave)
-		return vdec->slave;
+	else if (vdec->slav)
+		return vdec->slav;
 	return NULL;
 }
 
@@ -1586,12 +1586,12 @@ int vdec_prepare_input(struct vdec_s *vdec, struct vframe_chunk_s **p)
 		if (vdec_dual(vdec) &&
 			((vdec->flag & VDEC_FLAG_SELF_INPUT_CONTEXT) == 0)) {
 			/* keep using previous input context */
-			struct vdec_s *master = (vdec->slave) ?
+			struct vdec_s *master = (vdec->slav) ?
 				vdec : vdec->master;
 		    if (master->input.last_swap_slave) {
-				swap_valid = master->slave->input.swap_valid;
+				swap_valid = master->slav->input.swap_valid;
 				swap_page_phys =
-					master->slave->input.swap_page_phys;
+					master->slav->input.swap_page_phys;
 			} else {
 				swap_valid = master->input.swap_valid;
 				swap_page_phys = master->input.swap_page_phys;
@@ -1765,8 +1765,8 @@ int vdec_set_input_buffer(struct vdec_s *vdec, u32 start, u32 size)
 	if (r)
 		return r;
 
-	if (vdec->slave)
-		r = vdec_input_set_buffer(&vdec->slave->input, start, size);
+	if (vdec->slav)
+		r = vdec_input_set_buffer(&vdec->slav->input, start, size);
 
 	return r;
 }
@@ -1818,8 +1818,8 @@ void vdec_set_eos(struct vdec_s *vdec, bool eos)
 
 	vdec->input.eos = eos;
 
-	if (vdec->slave)
-		vdec->slave->input.eos = eos;
+	if (vdec->slav)
+		vdec->slav->input.eos = eos;
 	up(&core->sem);
 }
 EXPORT_SYMBOL(vdec_set_eos);
@@ -2016,9 +2016,9 @@ void vdec_save_input_context(struct vdec_s *vdec)
 		vdec_sync_input_read(vdec);
 
 		if (vdec_dual(vdec)) {
-			struct vdec_s *master = (vdec->slave) ?
+			struct vdec_s *master = (vdec->slav) ?
 				vdec : vdec->master;
-			master->input.last_swap_slave = (master->slave == vdec);
+			master->input.last_swap_slave = (master->slav == vdec);
 			/* pr_info("master->input.last_swap_slave = %d\n",
 				master->input.last_swap_slave); */
 		}
@@ -2206,19 +2206,19 @@ int vdec_connect(struct vdec_s *vdec)
 
 	init_completion(&vdec->inactive_done);
 
-	if (vdec->slave) {
-		vdec_set_status(vdec->slave, VDEC_STATUS_CONNECTED);
-		vdec_set_next_status(vdec->slave, VDEC_STATUS_CONNECTED);
+	if (vdec->slav) {
+		vdec_set_status(vdec->slav, VDEC_STATUS_CONNECTED);
+		vdec_set_next_status(vdec->slav, VDEC_STATUS_CONNECTED);
 
-		init_completion(&vdec->slave->inactive_done);
+		init_completion(&vdec->slav->inactive_done);
 	}
 
 	flags = vdec_core_lock(vdec_core);
 
 	list_add_tail(&vdec->list, &vdec_core->connected_vdec_list);
 
-	if (vdec->slave) {
-		list_add_tail(&vdec->slave->list,
+	if (vdec->slav) {
+		list_add_tail(&vdec->slav->list,
 			&vdec_core->connected_vdec_list);
 	}
 
@@ -2249,8 +2249,8 @@ int vdec_disconnect(struct vdec_s *vdec)
 	 */
 	vdec_set_next_status(vdec, VDEC_STATUS_DISCONNECTED);
 
-	if (vdec->slave)
-		vdec_set_next_status(vdec->slave, VDEC_STATUS_DISCONNECTED);
+	if (vdec->slav)
+		vdec_set_next_status(vdec->slav, VDEC_STATUS_DISCONNECTED);
 	else if (vdec->master)
 		vdec_set_next_status(vdec->master, VDEC_STATUS_DISCONNECTED);
 	mutex_unlock(&vdec_mutex);
@@ -2260,8 +2260,8 @@ int vdec_disconnect(struct vdec_s *vdec)
 		msecs_to_jiffies(2000)))
 		goto discon_timeout;
 
-	if (vdec->slave) {
-		if(!wait_for_completion_timeout(&vdec->slave->inactive_done,
+	if (vdec->slav) {
+		if(!wait_for_completion_timeout(&vdec->slav->inactive_done,
 			msecs_to_jiffies(2000)))
 			goto discon_timeout;
 	} else if (vdec->master) {
@@ -2347,13 +2347,6 @@ int vdec_resource_checking(struct vdec_s *vdec)
 	return 0;
 }
 EXPORT_SYMBOL(vdec_resource_checking);
-
-int isosd_mod = 0;
-int is_osd_mod(void)
-{
-	return isosd_mod;
-}
-EXPORT_SYMBOL(is_osd_mod);
 
 /*
  *register vdec_device
@@ -2446,8 +2439,8 @@ s32 vdec_init(struct vdec_s *vdec, int is_4k)
 			goto error;
 		}
 
-		if (vdec->slave) {
-			memcpy(&vdec->slave->vbuf, &vdec->vbuf,
+		if (vdec->slav) {
+			memcpy(&vdec->slav->vbuf, &vdec->vbuf,
 				sizeof(vdec->vbuf));
 		}
 	}
@@ -2487,7 +2480,6 @@ s32 vdec_init(struct vdec_s *vdec, int is_4k)
 		goto error;
 	}
 
-	isosd_mod = 0;
 	if (p->use_vfm_path) {
 		vdec->vf_receiver_inst = -1;
 		vdec->vfm_map_id[0] = 0;
@@ -2516,8 +2508,6 @@ s32 vdec_init(struct vdec_s *vdec, int is_4k)
 		}
 #ifdef CONFIG_AMLOGIC_IONVIDEO
 		else if (p->frame_base_video_path == FRAME_BASE_PATH_IONVIDEO) {
-		    isosd_mod = 0x8;
-		    pr_info("osd mod\n");
 #if 1
 			r = ionvideo_assign_map(&vdec->vf_receiver_name,
 					&vdec->vf_receiver_inst);
@@ -2934,13 +2924,13 @@ int vdec_reset(struct vdec_s *vdec)
 	if (vdec->vframe_provider.name)
 		vf_unreg_provider(&vdec->vframe_provider);
 
-	if ((vdec->slave) && (vdec->slave->vframe_provider.name))
-		vf_unreg_provider(&vdec->slave->vframe_provider);
+	if ((vdec->slav) && (vdec->slav->vframe_provider.name))
+		vf_unreg_provider(&vdec->slav->vframe_provider);
 
 	if (vdec->reset) {
 		vdec->reset(vdec);
-		if (vdec->slave)
-			vdec->slave->reset(vdec->slave);
+		if (vdec->slav)
+			vdec->slav->reset(vdec->slav);
 	}
 	vdec->mc_loaded = 0;/*clear for reload firmware*/
 	vdec_input_release(&vdec->input);
@@ -2954,11 +2944,11 @@ int vdec_reset(struct vdec_s *vdec)
 	vf_notify_receiver(vdec->vf_provider_name,
 			VFRAME_EVENT_PROVIDER_START, vdec);
 
-	if (vdec->slave) {
-		vf_reg_provider(&vdec->slave->vframe_provider);
-		vf_notify_receiver(vdec->slave->vf_provider_name,
-			VFRAME_EVENT_PROVIDER_START, vdec->slave);
-		vdec->slave->mc_loaded = 0;/*clear for reload firmware*/
+	if (vdec->slav) {
+		vf_reg_provider(&vdec->slav->vframe_provider);
+		vf_notify_receiver(vdec->slav->vf_provider_name,
+			VFRAME_EVENT_PROVIDER_START, vdec->slav);
+		vdec->slav->mc_loaded = 0;/*clear for reload firmware*/
 	}
 
 	vdec_connect(vdec);
@@ -2976,13 +2966,13 @@ int vdec_v4l2_reset(struct vdec_s *vdec, int flag)
 		if (vdec->vframe_provider.name)
 			vf_unreg_provider(&vdec->vframe_provider);
 
-		if ((vdec->slave) && (vdec->slave->vframe_provider.name))
-			vf_unreg_provider(&vdec->slave->vframe_provider);
+		if ((vdec->slav) && (vdec->slav->vframe_provider.name))
+			vf_unreg_provider(&vdec->slav->vframe_provider);
 
 		if (vdec->reset) {
 			vdec->reset(vdec);
-			if (vdec->slave)
-				vdec->slave->reset(vdec->slave);
+			if (vdec->slav)
+				vdec->slav->reset(vdec->slav);
 		}
 		vdec->mc_loaded = 0;/*clear for reload firmware*/
 
@@ -2997,17 +2987,17 @@ int vdec_v4l2_reset(struct vdec_s *vdec, int flag)
 		vf_notify_receiver(vdec->vf_provider_name,
 				VFRAME_EVENT_PROVIDER_START, vdec);
 
-		if (vdec->slave) {
-			vf_reg_provider(&vdec->slave->vframe_provider);
-			vf_notify_receiver(vdec->slave->vf_provider_name,
-				VFRAME_EVENT_PROVIDER_START, vdec->slave);
-			vdec->slave->mc_loaded = 0;/*clear for reload firmware*/
+		if (vdec->slav) {
+			vf_reg_provider(&vdec->slav->vframe_provider);
+			vf_notify_receiver(vdec->slav->vf_provider_name,
+				VFRAME_EVENT_PROVIDER_START, vdec->slav);
+			vdec->slav->mc_loaded = 0;/*clear for reload firmware*/
 		}
 	} else {
 		if (vdec->reset) {
 			vdec->reset(vdec);
-			if (vdec->slave)
-				vdec->slave->reset(vdec->slave);
+			if (vdec->slav)
+				vdec->slav->reset(vdec->slav);
 		}
 	}
 
@@ -3035,8 +3025,8 @@ void vdec_core_request(struct vdec_s *vdec, unsigned long mask)
 {
 	vdec->core_mask |= mask;
 
-	if (vdec->slave)
-		vdec->slave->core_mask |= mask;
+	if (vdec->slav)
+		vdec->slav->core_mask |= mask;
 	if (vdec_core->parallel_dec == 1) {
 		if (mask & CORE_MASK_COMBINE)
 			vdec_core->vdec_combine_flag++;
@@ -3049,8 +3039,8 @@ int vdec_core_release(struct vdec_s *vdec, unsigned long mask)
 {
 	vdec->core_mask &= ~mask;
 
-	if (vdec->slave)
-		vdec->slave->core_mask &= ~mask;
+	if (vdec->slav)
+		vdec->slav->core_mask &= ~mask;
 	if (vdec_core->parallel_dec == 1) {
 		if (mask & CORE_MASK_COMBINE)
 			vdec_core->vdec_combine_flag--;
@@ -3237,7 +3227,7 @@ unsigned long vdec_ready_to_run(struct vdec_s *vdec, unsigned long mask)
 	if (vdec->vfc.err_crc_block)
 		return false;
 
-	if ((vdec->slave || vdec->master) &&
+	if ((vdec->slav || vdec->master) &&
 		(vdec->sched == 0))
 		return false;
 #ifdef VDEC_DEBUG_SUPPORT

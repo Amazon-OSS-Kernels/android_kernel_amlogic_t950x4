@@ -181,7 +181,7 @@ struct vdec_s {
 	int id;
 
 	struct vdec_s *master;
-	struct vdec_s *slave;
+	struct vdec_s *slav;
 	struct stream_port_s *port;
 	struct stream_buf_s vbuf;
 	int status;

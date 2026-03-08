@@ -600,8 +600,8 @@ static void video_port_release(struct port_priv_s *priv,
 	/*fallthrough*/
 	case 0:		/*release all */
 	case 3:
-		if (vdec->slave)
-			slave = vdec->slave;
+		if (vdec->slav)
+			slave = vdec->slav;
 		vdec_release(vdec);
 		if (slave)
 			vdec_release(slave);
@@ -625,8 +625,8 @@ static int video_port_init(struct port_priv_s *priv,
 	}
 	if (vdec_dual(vdec) && vdec_secure(vdec)) {
 		/*copy drm flags for slave dec.*/
-		if(vdec->slave)
-			vdec->slave->port_flag |= PORT_FLAG_DRM;
+		if(vdec->slav)
+			vdec->slav->port_flag |= PORT_FLAG_DRM;
 	}
 	if (port->vformat == VFORMAT_H264_4K2K ||
 		(priv->vdec->sys_info->height *
@@ -653,7 +653,7 @@ static int video_port_init(struct port_priv_s *priv,
 		if (vdec_dual(vdec)) {
 			if (port->vformat == VFORMAT_AV1)	/* av1 dv only single layer */
 				return 0;
-			r = vdec_init(vdec->slave,
+			r = vdec_init(vdec->slav,
 				(priv->vdec->sys_info->height *
 				priv->vdec->sys_info->width) > 1920*1088);
 			if (r < 0) {
@@ -689,7 +689,7 @@ static int video_port_init(struct port_priv_s *priv,
 	}
 
 	if (vdec_dual(vdec)) {
-		r = vdec_init(vdec->slave,
+		r = vdec_init(vdec->slav,
 			(priv->vdec->sys_info->height *
 			priv->vdec->sys_info->width) > 1920*1088);
 		if (r < 0) {
@@ -700,8 +700,8 @@ static int video_port_init(struct port_priv_s *priv,
 
 	return 0;
 err:
-	if (vdec->slave)
-		vdec_release(vdec->slave);
+	if (vdec->slav)
+		vdec_release(vdec->slav);
 	if (vdec)
 		vdec_release(vdec);
 	priv->vdec = NULL;
@@ -1753,9 +1753,9 @@ static int amstream_open(struct inode *inode, struct file *file)
 		if (!(port->type & PORT_TYPE_FRAME)) {
 			if ((port->type & PORT_TYPE_DUALDEC) ||
 				(vdec_get_debug_flags() & 0x100)) {
-				priv->vdec->slave = vdec_create(port, priv->vdec);
+				priv->vdec->slav = vdec_create(port, priv->vdec);
 
-				if (priv->vdec->slave == NULL) {
+				if (priv->vdec->slav == NULL) {
 					vdec_release(priv->vdec);
 					port->flag = 0;
 					kfree(priv);
@@ -1788,8 +1788,8 @@ static int amstream_release(struct inode *inode, struct file *file)
 #ifdef CONFIG_AMLOGIC_MEDIA_MULTI_DEC
 		port_flag = priv->vdec->port_flag;
 #endif
-		if (priv->vdec->slave)
-			slave = priv->vdec->slave;
+		if (priv->vdec->slav)
+			slave = priv->vdec->slav;
 		vdec_release(priv->vdec);
 		if (slave)
 			vdec_release(slave);
@@ -2310,8 +2310,8 @@ static long amstream_ioctl_set(struct port_priv_s *priv, ulong arg)
 	case AMSTREAM_SET_DV_META_WITH_EL:
 		if (priv->vdec) {
 			vdec_set_dv_metawithel(priv->vdec, parm.data_32);
-			if (vdec_dual(priv->vdec) && priv->vdec->slave)
-				vdec_set_dv_metawithel(priv->vdec->slave,
+			if (vdec_dual(priv->vdec) && priv->vdec->slav)
+				vdec_set_dv_metawithel(priv->vdec->slav,
 				parm.data_32);
 		}
 		break;

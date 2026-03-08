@@ -802,6 +802,8 @@ struct AV1HW_s {
 	struct loopfilter *lf;
 	struct segmentation_lf *seg_4lf;
 #endif
+	int config_max_pic_w;
+	int config_max_pic_h;
 	u32 mem_map_mode;
 	u32 dynamic_buf_num_margin;
 	struct vframe_s vframe_dummy;
@@ -1313,7 +1315,7 @@ static int get_mv_buf(struct AV1HW_s *hw,
 		*mpred_mv_wr_start_addr =
 			(hw->m_mv_BUF[ret].start_adr + 0xffff) &
 			(~0xffff);
-		if (debug & AV1_DEBUG_BUFMGR_MORE)
+		if (debug & AV1_DEBUG_BUFMGR)
 			pr_info(
 			"%s => %d (%d) size 0x%x\n",
 			__func__, ret,
@@ -1323,6 +1325,17 @@ static int get_mv_buf(struct AV1HW_s *hw,
 		pr_info(
 		"%s: Error, mv buf is not enough\n",
 		__func__);
+		if (debug & AV1_DEBUG_BUFMGR) {
+			dump_pic_list(hw);
+			for (i = 0; i < MAX_BUF_NUM; i++) {
+				av1_print(hw, 0,
+					"mv_Buf(%d) start_adr 0x%x size 0x%x used %d\n",
+					i,
+					hw->m_mv_BUF[i].start_adr,
+					hw->m_mv_BUF[i].size,
+					hw->m_mv_BUF[i].used_flag);
+			}
+		}
 	}
 	return ret;
 }
@@ -1331,13 +1344,13 @@ static void put_mv_buf(struct AV1HW_s *hw,
 {
 	int i = *mv_buf_index;
 	if (i >= MV_BUFFER_NUM) {
-		if (debug & AV1_DEBUG_BUFMGR_MORE)
+		if (debug & AV1_DEBUG_BUFMGR)
 			pr_info(
 			"%s: index %d beyond range\n",
 			__func__, i);
 		return;
 	}
-	if (debug & AV1_DEBUG_BUFMGR_MORE)
+	if (debug & AV1_DEBUG_BUFMGR)
 		pr_info(
 		"%s(%d): used_flag(%d)\n",
 		__func__, i,
@@ -1353,6 +1366,7 @@ static void	put_un_used_mv_bufs(struct AV1HW_s *hw)
 	struct AV1_Common_s *const cm = &hw->common;
 	struct RefCntBuffer_s *const frame_bufs = cm->buffer_pool->frame_bufs;
 	int i;
+
 	for (i = 0; i < hw->used_buf_num; ++i) {
 		if ((frame_bufs[i].ref_count == 0) &&
 			(frame_bufs[i].buf.index != -1) &&
@@ -1506,12 +1520,19 @@ static int get_free_fb(AV1_COMMON *cm) {
 		}
 
 		frame_bufs[i].ref_count = 1;
+		if (debug & AV1_DEBUG_BUFMGR) {
+			pr_info("%s, idx: %d\n",
+				__func__, i);
+		}
 	} else {
 		// We should never run out of free buffers. If this assertion fails, there
 		// is a reference leak.
 		//assert(0 && "Ran out of free frame buffers. Likely a reference leak.");
 		// Reset i to be INVALID_IDX to indicate no free buffer found.
 		i = INVALID_IDX;
+		if (debug & AV1_DEBUG_BUFMGR) {
+			pr_info("[ERR]%s, av1 get free pic null\n", __func__);
+		}
 	}
 
 	unlock_buffer_pool(cm->buffer_pool, flags);
@@ -1521,6 +1542,8 @@ static int get_free_fb(AV1_COMMON *cm) {
 int get_free_frame_buffer(struct AV1_Common_s *cm)
 {
 	struct AV1HW_s *hw = container_of(cm, struct AV1HW_s, common);
+
+	put_un_used_mv_bufs(hw);
 
 	return hw->is_used_v4l ? v4l_get_free_fb(hw) : get_free_fb(cm);
 }
@@ -5845,7 +5868,7 @@ void av1_inc_vf_ref(struct AV1HW_s *hw, int index)
 	if ((debug & AV1_DEBUG_IGNORE_VF_REF) == 0) {
 		cm->buffer_pool->frame_bufs[index].buf.vf_ref++;
 
-		av1_print(hw, AV1_DEBUG_BUFMGR_MORE, "%s index = %d new vf_ref = %d\r\n",
+		av1_print(hw, AV1_DEBUG_BUFMGR, "%s index = %d new vf_ref = %d\r\n",
 			__func__, index,
 			cm->buffer_pool->frame_bufs[index].buf.vf_ref);
 	}
@@ -6290,6 +6313,14 @@ static int prepare_display_buf(struct AV1HW_s *hw,
 		update_vf_memhandle(hw, vf, pic_config);
 
 		av1_inc_vf_ref(hw, pic_config->index);
+
+		//fps == 96k / duration ,eg: 60fps == 96k / 1600
+		av1_print(hw,AV1_DEBUG_OUT_PTS ,"hw->frame_dur:%d \n",hw->frame_dur);
+		if (vf->compWidth > 2560 && vf->compHeight > 1440) {
+			av1_print(hw,AV1_DEBUG_OUT_PTS ,"VFRAME_FLAG_HIGH_BANDWIDTH\n");
+			vf->flag |= VFRAME_FLAG_HIGH_BANDWIDTH;
+		}
+
 		decoder_do_frame_check(hw_to_vdec(hw), vf);
 		vdec_vframe_ready(hw_to_vdec(hw), vf);
 		kfifo_put(&hw->display_q, (const struct vframe_s *)vf);
@@ -8181,6 +8212,12 @@ static irqreturn_t vav1_isr_thread_fn(int irq, void *data)
 		int next_lcu_size;
 	    hw->has_sequence = 1;
 	    av1_bufmgr_process(hw->pbi, &hw->aom_param, 0, obu_type);
+		if ((hw->config_max_pic_h != 0) && (hw->config_max_pic_w != 0) &&
+			(hw->config_max_pic_w < hw->aom_param.p.max_frame_width ||
+			hw->config_max_pic_h < hw->aom_param.p.max_frame_height)) {
+			hw->fatal_error |= DECODER_FATAL_ERROR_SIZE_OVERFLOW;
+			return IRQ_HANDLED;
+		}
 
 		if ((hw->max_pic_w < hw->aom_param.p.max_frame_width) ||
 			(hw->max_pic_h < hw->aom_param.p.max_frame_height)) {
@@ -8303,7 +8340,6 @@ static irqreturn_t vav1_isr_thread_fn(int irq, void *data)
 
 	if (hw->m_ins_flag)
 		reset_process_time(hw);
-
 
 	if (hw->process_state != PROC_STATE_SENDAGAIN
 		) {
@@ -9137,8 +9173,12 @@ static int vav1_stop(struct AV1HW_s *hw)
 }
 static int amvdec_av1_mmu_init(struct AV1HW_s *hw)
 {
-	int tvp_flag = vdec_secure(hw_to_vdec(hw)) ?
+	uint tvp_flag = vdec_secure(hw_to_vdec(hw)) ?
 		CODEC_MM_FLAGS_TVP : 0;
+#ifdef CONFIG_OSD_MEMORY
+	uint osd_flag = (hw_to_vdec(hw)->frame_base_video_path ==
+			FRAME_BASE_PATH_IONVIDEO) ? CODEC_MM_FLAGS_SYS_FIRST : 0;
+#endif
 	int buf_size = 48;
 
 	if ((hw->max_pic_w * hw->max_pic_h > 1280*736) &&
@@ -9156,6 +9196,9 @@ static int amvdec_av1_mmu_init(struct AV1HW_s *hw)
 			hw->index /* * 2*/, count,
 			hw->need_cache_size,
 			tvp_flag
+#ifdef CONFIG_OSD_MEMORY
+			| osd_flag
+#endif
 			);
 		if (!hw->mmu_box) {
 			pr_err("av1 alloc mmu box failed!!\n");
@@ -9167,6 +9210,9 @@ static int amvdec_av1_mmu_init(struct AV1HW_s *hw)
 				hw->index /** 2 + 1*/, count,
 				hw->need_cache_size,
 				tvp_flag
+#ifdef CONFIG_OSD_MEMORY
+				| osd_flag
+#endif
 				);
 			if (!hw->mmu_box_dw) {
 				pr_err("av1 alloc dw mmu box failed!!\n");
@@ -10295,8 +10341,8 @@ static int ammvdec_av1_probe(struct platform_device *pdev)
 				VFM_DEC_DVBL_PROVIDER_NAME);
 		if (pdata->master)
 			hevc_pair = (struct AV1HW_s *)pdata->master->private;
-		else if (pdata->slave)
-			hevc_pair = (struct AV1HW_s *)pdata->slave->private;
+		else if (pdata->slav)
+			hevc_pair = (struct AV1HW_s *)pdata->slav->private;
 
 		if (hevc_pair)
 			hw->shift_byte_count_lo = hevc_pair->shift_byte_count_lo;
@@ -10358,6 +10404,10 @@ static int ammvdec_av1_probe(struct platform_device *pdev)
 				&config_val) == 0) {
 				hw->max_pic_h = config_val;
 		}
+
+		hw->config_max_pic_w = hw->max_pic_w;
+		hw->config_max_pic_h = hw->max_pic_h;
+
 		if ((hw->max_pic_w * hw->max_pic_h)
 			< (av1_buf_width * av1_buf_height)) {
 			hw->max_pic_w = av1_buf_width;
@@ -10493,6 +10543,12 @@ static int ammvdec_av1_probe(struct platform_device *pdev)
 	hw->buf_start = pdata->mem_start;
 	hw->buf_size = pdata->mem_end - pdata->mem_start + 1;
 #else
+
+	if ((hw->config_max_pic_h == 0) || (hw->config_max_pic_w == 0)) {
+		hw->config_max_pic_w = hw->max_pic_w;
+		hw->config_max_pic_h = hw->max_pic_h;
+	}
+
 	if (amvdec_av1_mmu_init(hw) < 0) {
 		pr_err("av1 alloc bmmu box failed!!\n");
 		/* devm_kfree(&pdev->dev, (void *)hw); */
@@ -10929,4 +10985,3 @@ module_exit(amvdec_av1_driver_remove_module);
 
 MODULE_DESCRIPTION("AMLOGIC av1 Video Decoder Driver");
 MODULE_LICENSE("GPL");
-
