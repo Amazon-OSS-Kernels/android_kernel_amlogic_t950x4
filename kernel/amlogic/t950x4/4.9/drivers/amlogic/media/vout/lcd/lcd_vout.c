@@ -52,7 +52,7 @@
 
 #define LCD_CDEV_NAME  "lcd"
 
-#if defined(CONFIG_AMAZON_METRICS_LOG)
+#if defined(CONFIG_AMAZON_METRICS_LOG) || defined(CONFIG_AMAZON_MINERVA_METRICS_LOG)
 #include <linux/metricslog.h>
 #endif
 unsigned char lcd_debug_print_flag;
@@ -282,8 +282,7 @@ EXPORT_SYMBOL(aml_lcd_get_driver);
 /* ********************************************************* */
 
 
-#if defined(CONFIG_AMAZON_METRICS_LOG)
-
+#if defined(CONFIG_AMAZON_METRICS_LOG) || defined(CONFIG_AMAZON_MINERVA_METRICS_LOG)
 struct metrics_info {
 	int flags;
 	/* Time when system enters full suspend */
@@ -302,10 +301,18 @@ static void bq_log_metrics(char *msg,
 	struct timespec diff = timespec_sub(curr,
 			info.suspend_time);
 
+#ifdef CONFIG_AMAZON_MINERVA_METRICS_LOG
+	snprintf(buf, sizeof(buf),
+		"%s:%s:100:%s:def:value=0;CT;1,elapsed=%ld;TI;1:NR",
+		KERNEL_METRICS_GROUP_ID, KERNEL_METRICS_SCREEN_DRAIN_SCHEMA_ID,
+		metricsmsg,
+		diff.tv_sec * 1000 + diff.tv_nsec / NSEC_PER_MSEC);
+#elif defined(CONFIG_AMAZON_METRICS_LOG)
 	snprintf(buf, sizeof(buf),
 		"%s:def:value=0;CT;1,elapsed=%ld;TI;1:NR",
 		metricsmsg,
 		diff.tv_sec * 1000 + diff.tv_nsec / NSEC_PER_MSEC);
+#endif
 	log_to_metrics(ANDROID_LOG_INFO, "drain_metrics", buf);
 	/* Mark the suspend or resume time */
 	info.suspend_time = curr;
@@ -380,7 +387,7 @@ static void lcd_power_ctrl(int status)
 		}
 		lcd_power->pwr_off_start_time = sched_clock();
 	}
-#if defined(CONFIG_AMAZON_METRICS_LOG)
+#if defined(CONFIG_AMAZON_METRICS_LOG) || defined(CONFIG_AMAZON_MINERVA_METRICS_LOG)
 	dummy_light_set(status);
 #endif
 	i = 0;
@@ -1726,7 +1733,7 @@ static int lcd_probe(struct platform_device *pdev)
 
 	lcd_debug_print_flag = lcd_boot_ctrl_config.debug_print_flag;
 
-#if defined(CONFIG_AMAZON_METRICS_LOG)
+#if defined(CONFIG_AMAZON_METRICS_LOG) || defined(CONFIG_AMAZON_MINERVA_METRICS_LOG)
 	info.suspend_time = current_kernel_time();
 #endif
 

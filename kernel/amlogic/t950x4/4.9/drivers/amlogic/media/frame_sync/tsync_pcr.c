@@ -109,6 +109,8 @@ static u32 tsync_pcr_recovery_span = 3; /* 10 */
 /* av sync monitor threshold */
 #define MAX_SYNC_VGAP_TIME   90000
 #define MIN_SYNC_VCHACH_TIME   45000
+#define MAX_SYNC_VCHACH_TIME   450000
+#define VCACHE_AJUDST_FACTOR   4
 
 #define MAX_SYNC_AGAP_TIME   45000
 #define MIN_SYNC_ACHACH_TIME   27000
@@ -116,6 +118,26 @@ static u32 tsync_pcr_recovery_span = 3; /* 10 */
 #define PLAY_MODE_THRESHOLD 500	/*ms*/
 #define PLAY_PCR_INVALID_THRESHOLD (10 * 90000)
 #define VALID_PTS32(_pts_) ((_pts_) != 0xffffffff)
+
+struct tsync_pcr_s {
+	s32 vsync_inc;
+	u32 vsync_align;
+	/* slope */
+	u32 last_dmxpcr_pts;
+	u32 last_vframe_pts;
+	u64 last_dmxpcr_msecs;
+	u64 last_vframe_msecs;
+	u32 vframe_slope;
+	u32 dmxpcr_slope;
+	/* end slope */
+	u64 pcrpts_tune_msecs;
+	u32 tsync_clk_mode;
+	u32 tsync_vid_mode;
+	u32 tsync_aud_mode;
+	u32 cur_vframe_pts;
+	u32 vcache_pts;
+	u32 acache_pts;
+} /*tsync_pcr_s */;
 /* ------------------------------------------------------------------ */
 /* The const */
 
@@ -152,6 +174,7 @@ static u32 init_check_first_demuxpcr;
 /* The variate */
 
 static struct timer_list tsync_pcr_check_timer;
+static struct tsync_pcr_s tsync_s;
 
 static u32 tsync_pcr_tsdemux_startpcr;
 
@@ -607,11 +630,9 @@ void tsync_pcr_pcrscr_set(void)
 		gap_av = abs(cur_checkin_apts - cur_checkin_vpts);
 		gap_pv = abs(cur_pcr - cur_checkin_vpts);
 		if ((gap_pa > MAX_GAP) && (gap_pv > MAX_GAP)) {
-			if (gap_av > MAX_GAP)
-				ref_pcr = cur_checkin_vpts;
-			else
-				ref_pcr = min_checkinpts -
-					tsync_pcr_ref_latency;
+			if (tsync_pcr_ref_latency < MIN_SYNC_VCHACH_TIME)
+				tsync_pcr_ref_latency = MIN_SYNC_VCHACH_TIME;
+			ref_pcr = cur_checkin_vpts - tsync_pcr_ref_latency;
 			tsync_set_pcr_mode(0, ref_pcr);
 			tsync_pcr_inited_mode =
 				INIT_PRIORITY_VIDEO;
@@ -623,8 +644,9 @@ void tsync_pcr_pcrscr_set(void)
 		}
 		if (cur_checkin_vpts < cur_pcr &&
 		    cur_checkin_vpts < cur_checkin_apts) {
-			ref_pcr = cur_checkin_vpts -
-				tsync_pcr_ref_latency;
+			if (tsync_pcr_ref_latency < MIN_SYNC_VCHACH_TIME)
+				tsync_pcr_ref_latency = MIN_SYNC_VCHACH_TIME;
+			ref_pcr = cur_checkin_vpts - tsync_pcr_ref_latency;
 			tsync_set_pcr_mode(0, ref_pcr);
 			tsync_pcr_inited_mode =
 				INIT_PRIORITY_VIDEO;
@@ -1139,6 +1161,103 @@ static void tsync_process_discontinue(void)
 	}
 }
 
+static void tsync_dmx_buffer_control(u32 vpts, u64 msecs)
+{
+	int mode_t = PLAY_MODE_NORMAL, vcached = 0, threshold;
+	struct tsync_pcr_s *priv = &tsync_s;
+	bool avail = false, video_mode;
+	u32 t1, t2;
+
+	video_mode = (tsync_pcr_inited_mode == INIT_PRIORITY_VIDEO);
+	vcached = priv->vcache_pts;
+	threshold = priv->vsync_inc * VCACHE_AJUDST_FACTOR / 90;
+	if (vbuf_size && vbuf_size < 10 * 1024 * 1024)
+		vbuf_size = 10 * 1024 * 1024;
+	if (vcached > 0 && vcached < MIN_SYNC_VCHACH_TIME)
+		mode_t = PLAY_MODE_SLOW;
+	if (video_mode && (vcached * 2 > MAX_SYNC_VCHACH_TIME ||
+		(vbuf_level * 10 > vbuf_size * 5)))
+		mode_t = PLAY_MODE_SPEED;
+	if (video_mode && (vbuf_level * 10 > vbuf_size * 6 || (vcached >
+		MAX_SYNC_VCHACH_TIME && vbuf_level * 10 > vbuf_size))) {
+		mode_t = PLAY_MODE_SPEED;
+		threshold = priv->vsync_inc / 90;
+	}
+	if (msecs > priv->pcrpts_tune_msecs) {
+		if ((msecs - priv->pcrpts_tune_msecs) > threshold *
+			1000LL && mode_t != PLAY_MODE_NORMAL) {
+			priv->pcrpts_tune_msecs = msecs;
+			avail = true;
+		}
+	} else
+		priv->pcrpts_tune_msecs = msecs;
+	if (avail && timestamp_pcrscr_enable_state()) {
+		t1 = timestamp_pcrscr_get();
+		if (mode_t == PLAY_MODE_SPEED) {
+			timestamp_pcrscr_set(timestamp_pcrscr_get() +
+				priv->vsync_inc);
+		} else if (mode_t == PLAY_MODE_SLOW) {
+			timestamp_pcrscr_set(timestamp_pcrscr_get() -
+				priv->vsync_inc);
+		}
+		t2 = timestamp_pcrscr_get();
+		if (tsync_pcr_debug)
+			pr_info("%s,pcrpts[%x->%x, %d ms],vcached[%d]\n",
+				__func__, t1, t2, (int)(t2 - t1) / 90,
+				vcached / 90);
+	}
+}
+
+static void tsync_pcr_clac_pts_slope(u32 vpts, u32 dmx_pcr, u64 msecs)
+{
+	u32 cur_vframe_slope = 0, cur_dmxpcr_slope = 0, cur_dmxpcr = 0;
+	int64_t pmsecs_inc = 0, vmsecs_inc = 0;
+	int vframe_inc = 0, dmxpcr_inc = 0;
+	struct tsync_pcr_s *priv = &tsync_s;
+
+	if (vpts) {
+		vframe_inc = vpts - priv->last_vframe_pts;
+		vmsecs_inc = msecs - priv->last_vframe_msecs;
+		if (vmsecs_inc > 0 && vmsecs_inc < 1000 * 1000) {
+			if (vframe_inc < 0)
+				vframe_inc = 0;
+			if (vmsecs_inc > 300 * 1000)
+				cur_vframe_slope = div64_u64((u64)vframe_inc *
+					1000000, vmsecs_inc * 90);
+		} else {
+			priv->last_vframe_msecs = msecs;
+			priv->last_vframe_pts = vpts;
+			priv->vframe_slope = 0;
+		}
+	}
+	if (dmx_pcr) {
+		cur_dmxpcr = dmx_pcr;
+		dmxpcr_inc = cur_dmxpcr - priv->last_dmxpcr_pts;
+		pmsecs_inc = msecs - priv->last_dmxpcr_msecs;
+		if (pmsecs_inc > 0 && pmsecs_inc < 1000 * 1000) {
+			if (dmxpcr_inc < 0)
+				dmxpcr_inc = 0;
+			if (pmsecs_inc > 500 * 1000)
+				cur_dmxpcr_slope = div64_u64((u64)dmxpcr_inc *
+					1000000, pmsecs_inc * 90);
+		} else {
+			priv->last_dmxpcr_msecs = msecs;
+			priv->last_dmxpcr_pts = cur_dmxpcr;
+			priv->dmxpcr_slope = 0;
+		}
+	}
+	if (cur_vframe_slope) {
+		priv->last_vframe_msecs = msecs;
+		priv->last_vframe_pts = vpts;
+		priv->vframe_slope = cur_vframe_slope;
+	}
+	if (cur_dmxpcr_slope) {
+		priv->last_dmxpcr_msecs = msecs;
+		priv->last_dmxpcr_pts = cur_dmxpcr;
+		priv->dmxpcr_slope = cur_dmxpcr_slope;
+	}
+}
+
 void tsync_pcr_check_checinpts(void)
 {
 	u32 checkin_vpts = 0;
@@ -1498,6 +1617,60 @@ void tsync_pcr_avevent_locked(enum avevent_e event, u32 param)
 }
 EXPORT_SYMBOL(tsync_pcr_avevent_locked);
 
+bool tsync_pcr_vpts_process(u32 vpts, u32 inc, u32 dur, int align)
+{
+	u32 cur_vpts, checkin_vpts, pcrpts, dmx_pcr = 0;
+	u32 cur_apts, checkin_apts, first_apts;
+	struct tsync_pcr_s *priv = &tsync_s;
+	struct timespec64 ts_monotonic;
+	u64 time_us, cur_record_us;
+	bool dmxpcr_valid = false;
+	int av_diff = 0;
+
+	cur_vpts = vpts ? vpts : timestamp_vpts_get() + dur;
+	if (!tsync_pcr_vstart_flag || tsync_pcr_vpause_flag)
+		goto exit;
+	priv->vsync_inc = inc;
+	priv->vsync_align = align;
+	ktime_get_ts64(&ts_monotonic);
+	time_us = ts_monotonic.tv_sec * 1000000LL +
+		div64_u64(ts_monotonic.tv_nsec, 1000);
+	cur_record_us = time_us;
+	priv->cur_vframe_pts = vpts;
+	dmxpcr_valid = tsync_get_demux_pcrscr_valid();
+	if (dmxpcr_valid)
+		dmx_pcr = tsdemux_pcrscr_get_cb();
+	checkin_vpts = get_last_checkin_pts(PTS_TYPE_VIDEO);
+	if (checkin_vpts > cur_vpts)
+		priv->vcache_pts = (checkin_vpts - cur_vpts);
+	else
+		priv->vcache_pts = 0;
+	checkin_apts = get_last_checkin_pts(PTS_TYPE_AUDIO);
+	first_apts = timestamp_firstapts_get();
+	cur_apts = timestamp_apts_started() ?
+		timestamp_apts_get() : first_apts;
+	if (VALID_PTS32(checkin_apts) && VALID_PTS32(cur_apts) &&
+		cur_apts && checkin_apts > cur_apts) {
+		priv->acache_pts = checkin_apts - cur_apts;
+		av_diff = cur_apts - cur_vpts;
+	} else
+		priv->acache_pts = 0;
+
+	tsync_pcr_clac_pts_slope(vpts, dmx_pcr, cur_record_us);
+	if (dmxpcr_valid)
+		tsync_dmx_buffer_control(cur_vpts, cur_record_us);
+	pcrpts = timestamp_pcrscr_get();
+	if (tsync_pcr_debug & 2)
+		pr_info("tsync:avcache[%d,%d,%x,%x],diff[%d,%d],slope[%d,%d]\n",
+			priv->acache_pts / 90, priv->vcache_pts / 90,
+			abuf_level, vbuf_level, (int)(pcrpts - cur_vpts) / 90,
+			av_diff / 90, priv->dmxpcr_slope,
+			priv->vframe_slope);
+exit:
+	return ((u64)timestamp_pcrscr_get() + align >= cur_vpts) ? true : false;
+}
+EXPORT_SYMBOL(tsync_pcr_vpts_process);
+
 /* timer to check the system with the referrence time in ts stream. */
 static unsigned long tsync_pcr_check(void)
 {
@@ -1671,6 +1844,8 @@ static unsigned long tsync_pcr_check(void)
 	last_checkin_minpts = tsync_pcr_get_min_checkinpts();
 	cur_apts = timestamp_apts_get();
 	cur_vpts = timestamp_vpts_get();
+	if (tsync_get_demux_pcrscr_valid())
+		return res;
 
 	tsync_process_discontinue();
 	if (tsync_use_demux_pcr || tsync_demux_pcr_valid)
@@ -2455,6 +2630,7 @@ static int __init tsync_pcr_init(void)
 	tsync_audio_mode = 0;
 	tsync_disable_demux_pcr = 0;
 	tsync_pcr_latency_value = 540000;
+	memset(&tsync_s, 0, sizeof(struct tsync_pcr_s));
 	pr_info("[%s]init success.\n", __func__);
 	return 0;
 }

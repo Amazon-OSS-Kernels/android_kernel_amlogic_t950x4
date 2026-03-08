@@ -183,6 +183,7 @@ void tsync_set_av_state(u8 type, int state);
 u8 tsync_get_demux_pcrscr_valid(void);
 void timestamp_checkin_firstaoffset_set(u32 offset);
 u32 timestamp_checkin_firstaoffset_get(void);
+bool tsync_pcr_vpts_process(u32 vpts, u32 inc, u32 dur, int align);
 
 static inline u32 tsync_vpts_discontinuity_margin(void)
 {

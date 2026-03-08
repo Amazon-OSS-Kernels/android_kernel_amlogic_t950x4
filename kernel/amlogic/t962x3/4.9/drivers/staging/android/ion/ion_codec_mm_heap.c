@@ -44,14 +44,6 @@ ion_phys_addr_t ion_codec_mm_allocate(struct ion_heap *heap,
 	unsigned long offset;
 
 	mutex_lock(&codec_heap->size_mutex);
-	if (codec_heap->alloced_size + size > codec_heap->max_can_alloc_size) {
-		pr_err(
-			"ion_codec_mm_allocate failed out size %lu,alloced %lu\n",
-			size,
-			codec_heap->alloced_size);
-		mutex_unlock(&codec_heap->size_mutex);
-		return ION_CODEC_MM_ALLOCATE_FAIL;
-	}
 
 	offset = codec_mm_alloc_for_dma(
 		CODEC_MM_ION,
@@ -60,7 +52,9 @@ ion_phys_addr_t ion_codec_mm_allocate(struct ion_heap *heap,
 		CODEC_MM_FLAGS_DMA);
 
 	if (!offset) {
-		pr_err("ion_codec_mm_allocate failed out size %lu\n", size);
+		pr_err(
+			"ion_codec_mm_allocate failed out size %lu / %lu\n",
+			size, codec_heap->alloced_size);
 		mutex_unlock(&codec_heap->size_mutex);
 		return ION_CODEC_MM_ALLOCATE_FAIL;
 	}

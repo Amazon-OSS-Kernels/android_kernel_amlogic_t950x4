@@ -175,6 +175,8 @@ static struct video_frame_detect_s video_frame_detect;
 static long long time_setomxpts;
 static long long time_setomxpts_last;
 struct nn_value_t nn_scenes_value[AI_PQ_TOP];
+static long long last_setomxpts_time;
+static bool notunel_pause;
 
 /*----omx_info  bit0: keep_last_frame, bit1~31: unused----*/
 static u32 omx_info = 0x1;
@@ -2742,10 +2744,13 @@ pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
 			 *  to notify tsync and adjust the sysclock to
 			 * make playback smooth.
 			 */
-			if (next_vf->pts != 0)
+			if (next_vf->pts != 0) {
 				tsync_avevent_locked(VIDEO_TSTAMP_DISCONTINUITY,
 					next_vf->pts);
-			else if (next_vf->pts == 0) {
+				if ((u64)(timestamp_pcrscr_get() +
+					vsync_pts_inc) >= 0xFFFFFFFF)
+					return true;
+			} else if (next_vf->pts == 0) {
 				tsync_avevent_locked(VIDEO_TSTAMP_DISCONTINUITY,
 					pts);
 				return true;
@@ -2902,10 +2907,12 @@ pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
 			return expired;
 		}
 	}
-	if (tsync_get_mode() == TSYNC_MODE_PCRMASTER)
+	if (tsync_get_mode() == TSYNC_MODE_PCRMASTER) {
+		tsync_pcr_vpts_process(next_vf->pts, vsync_pts_inc,
+			DUR2PTS(next_vf->duration), vsync_pts_align);
 		expired = (timestamp_pcrscr_get() + vsync_pts_align >= pts) ?
 				true : false;
-	else
+	} else
 		expired = (int)(timestamp_pcrscr_get() +
 				vsync_pts_align - pts) >= 0;
 
@@ -3850,6 +3857,14 @@ bool black_threshold_check(u8 id)
 		return ret;
 
 	frame_par = layer->cur_frame_par;
+
+#ifdef CONFIG_ENABLE_AFD
+	if (frame_par &&
+		(frame_par->VPP_pic_in_height_ < 2 ||
+		frame_par->VPP_line_in_length_ < 2))
+		    return true;
+#endif
+
 	if ((layer_info->layer_width <= black_threshold_width) ||
 	    (layer_info->layer_height <= black_threshold_height)) {
 		if (frame_par &&
@@ -5293,6 +5308,14 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 					pr_info("omxpts is not update for a while,do not need compenstate\n");
 			} else {
 				diff -=  delta1 * 90 / 1000;
+			}
+		} else if (!notunel_pause && (last_setomxpts_time > 0)) {
+			delta1 = func_div(sched_clock() -
+					last_setomxpts_time, 1000);
+			if (delta1 > 60 * vsync_pts_inc * 1000 / 90) {
+				notunel_pause = true;
+				if (debug_flag & DEBUG_FLAG_PTS_TRACE)
+					pr_info("omxpts is not update for a while,maybe it paused\n");
 			}
 		}
 
@@ -7126,6 +7149,8 @@ static void video_vf_unreg_provider(void)
 	vdin_err_crc_cnt = 0;
 	smooth_sync_expired = 0;
 	video_frame_repeat_count = 0;
+	last_setomxpts_time = 0;
+	notunel_pause = false;
 
 #ifdef PTS_LOGGING
 	{
@@ -7390,6 +7415,7 @@ static int video_receiver_event_fun(int type, void *data, void *private_data)
 		dovi_drop_frame_num = 0;
 		mutex_unlock(&omx_mutex);
 		video_inuse = 1;
+		notunel_pause = false;
 /*notify di 3d mode is frame*/
 /*alternative mode,passing two buffer in one frame */
 		if ((process_3d_type & MODE_3D_FA) &&
@@ -8115,6 +8141,10 @@ static void set_omx_pts(u32 *p)
 		}
 	} else {
 		omx_continuous_drop_count++;
+		if (notunel_pause) {
+			omx_continuous_drop_flag = true;
+			notunel_pause = false;
+		}
 		if ((omx_continuous_drop_count >=
 		     OMX_CONTINUOUS_DROP_LEVEL) &&
 		    !(debug_flag &
@@ -8148,6 +8178,7 @@ static void set_omx_pts(u32 *p)
 			time_setomxpts = sched_clock();
 			omx_pts = tmp_pts;
 			set_omx_index = frame_num;
+			last_setomxpts_time = time_setomxpts;
 			ATRACE_COUNTER("omxpts", omx_pts);
 		}
 	}
