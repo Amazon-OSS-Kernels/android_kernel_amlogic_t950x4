@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/perf/amlogic-ddr-pmu.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Amlogic DMC Performance Monitor Unit
+
+maintainers:
+  - Jiucheng Xu <jiucheng.xu@amlogic.com>
+
+description:
+  This driver is used to measure DDR bandwidth, it can measure total
+  bandwidth of DDR, also can configure port in each channel and get
+  detailed bandwidth for each channel.
+
+properties:
+  compatible:
+    oneOf:
+      - enum:
+          - amlogic,ddr-pmu
+      - items:
+          - enum:
+              - amlogic,ddr-pmu
+          - const: amlogic,ddr-pmu
+
+  reg:
+    maxItems: 1
+
+  interrupts:
+    maxItems: 1
+
+  interrupt-names:
+    maxItems: 1
+
+required:
+  - compatible
+  - reg
+  - interrupts
+  - interrupt-names
+
+additionalProperties: false
+
+examples:
+  - |
+    ddr_pmu0 {
+        compatible = "amlogic,ddr-pmu";
+        reg = <0 0xfe036000 0 0x400
+               0 0xfe0a0000 0 0x100>;
+        interrupts = <0 332 IRQ_TYPE_EDGE_RISING>;
+        interrupt-names = "ddr_pmu0";
+    };

@@ -1,0 +1,52 @@
+1. The following raw events have been supported by t950x4. It could monitor 8
+channels simultaneously.
+
+Total:
+	aml_ddrc0/chan_all_read_write_cycles/
+
+Channel:
+	aml_ddrc0/chan_1_read_write_cycles/
+	aml_ddrc0/chan_2_read_write_cycles/
+	aml_ddrc0/chan_3_read_write_cycles/
+	aml_ddrc0/chan_4_read_write_cycles/
+	aml_ddrc0/chan_5_read_write_cycles/
+	aml_ddrc0/chan_6_read_write_cycles/
+	aml_ddrc0/chan_7_read_write_cycles/
+	aml_ddrc0/chan_8_read_write_cycles/
+
+2. The channel events need a parameter called "axi_id" to monitor a special IP
+port. The following list shows the mapping of axi_id and IP port :
+        axi_id =  0, port_name = "ARM"
+        axi_id =  1, port_name = "MALI"
+        axi_id =  2, port_name = "PCIE"
+        axi_id =  3, port_name = "HDCP"
+        axi_id =  4, port_name = "HEVC"
+        axi_id =  5, port_name = "TEST"
+        axi_id =  6, port_name = "USB3.0"
+        axi_id =  7, port_name = "DEVICE"
+        axi_id = 16, port_name = "VPU READ1"
+        axi_id = 17, port_name = "VPU READ2"
+        axi_id = 18, port_name = "VPU READ3"
+        axi_id = 19, port_name = "VPU WRITE1"
+        axi_id = 20, port_name = "VPU WRITE2"
+        axi_id = 21, port_name = "VDEC"
+        axi_id = 23, port_name = "GE2D"
+
+        axi_id = 33, port_name = "USB0"
+        axi_id = 34, port_name = "DMA"
+        axi_id = 35, port_name = "ARB0"
+        axi_id = 37, port_name = "USB1"
+        axi_id = 38, port_name = "AUDIO"
+        axi_id = 39, port_name = "AIFIFO"
+        axi_id = 40, port_name = "PARSER1"
+        axi_id = 41, port_name = "PARSER"
+        axi_id = 42, port_name = "AO CPU"
+        axi_id = 43, port_name = "SD_EMMC_C"
+        axi_id = 44, port_name = "SPICC"
+        axi_id = 45, port_name = "ETHERNET"
+        axi_id = 46, port_name = "SANA"
+
+For instance, the below event represents use channel 7 to monitor VDEC module.
+
+	-e aml_ddrc0/chan_7_read_write_cycles,axi_id=21/
+

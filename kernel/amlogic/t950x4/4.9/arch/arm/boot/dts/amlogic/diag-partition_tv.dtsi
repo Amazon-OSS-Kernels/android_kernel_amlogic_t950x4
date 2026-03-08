@@ -1,0 +1,68 @@
+/*
+ * Amlogic partition set for normal
+ *
+ * Copyright (c) 2017-2017 Amlogic Ltd
+ *
+ * This file is licensed under a dual GPLv2 or BSD license.
+ *
+ */
+
+#include "firmware_system.dtsi"
+
+/* diag specific partitions are needed to support tradition diag image */
+/ {
+    partitions_diag: partitions_diag{
+		parts = <20>;
+		part-0 = <&tee>;
+		part-1 = <&logo>;
+		part-2 = <&recovery>;
+		part-3 = <&misc>;
+		part-4 = <&dtbo>;
+		part-5 = <&cri_data>;
+		part-6 = <&boot>;
+		part-7 = <&vendor>;
+		part-8 = <&odm>;
+		part-9 = <&system>;
+		part-10 = <&product>;
+		part-11 = <&tvconfig>;
+		part-12 = <&fvp>;
+		part-13 = <&cache>;
+		part-14 = <&bak>;
+		part-15 = <&data_fos>;
+		part-16 = <&dkernel>;
+		part-17 = <&dfs>;
+		part-18 = <&dvendor>;
+		part-19 = <&data_diag>;
+
+		data_fos:data_fos
+		{
+			pname = "data";
+			size = <0x0 0x80000000>;
+			mask = <4>;
+		};
+		dkernel:dkernel
+		{
+			pname = "dkernel";
+			size = <0x0 0x2000000>;
+			mask = <1>;
+		};
+		dfs:dfs
+		{
+			pname = "dfs";
+			size = <0x0 0x2D400000>;
+			mask = <1>;
+		};
+		dvendor:dvendor
+		{
+			pname = "dvendor";
+			size = <0x0 0x14000000>;
+			mask = <1>;
+		};
+		data_diag:data_diag
+		{
+			pname = "diag_userdata";
+			size = <0xffffffff 0xffffffff>;
+			mask = <4>;
+		};
+	};
+};/* end of / */
