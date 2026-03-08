@@ -149,9 +149,13 @@ void system_suspend(uint32_t pm)
 	vTaskDelay(pdMS_TO_TICKS(500));
 	vDDR_suspend(shutdown_flag);
 	str_power_off(shutdown_flag);
-
+#ifdef HADRIAN_PROJECT
+	printf("LED:Brightness 50%%\n");
+        xLedsStateSetBrightness(0, 128);
+#else
 	printf("LED:Brightness 20%%\n");
 	xLedsStateSetBrightness(0, 51);
+#endif
 }
 
 void set_reason_flag(char exit_reason)

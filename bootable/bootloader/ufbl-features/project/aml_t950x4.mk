@@ -19,7 +19,8 @@ export UFBL_PLAT_AML_T950X4
 DEFINES += -DUFBL_PLAT_AML_T950X4
 
 # Specific changes per project
-ifeq ($(TARGET_PRODUCT), shine)
+ifeq ($(TARGET_PRODUCT), $(filter $(TARGET_PRODUCT), \
+        shine hadrian))
 FEATURE_TEMP_UNLOCK := true
 endif
 
