@@ -139,6 +139,9 @@ void saaSendAuthAssoc(IN struct ADAPTER *prAdapter,
 	struct CONNECTION_SETTINGS *prConnSettings = NULL;
 	/* default for OPEN */
 	uint16_t u2AuthTransSN = AUTH_TRANSACTION_SEQ_1;
+#if CFG_SUPPORT_H2E
+	uint16_t u2AuthStatusCode = STATUS_CODE_RESERVED;
+#endif
 	struct BSS_DESC *prBssDesc = NULL;
 	struct AIS_SPECIFIC_BSS_INFO *prAisSpecBssInfo = NULL;
 	struct PARAM_SSID rSsid;
@@ -191,6 +194,19 @@ void saaSendAuthAssoc(IN struct ADAPTER *prAdapter,
 					"[SAA]Get auth SN = %d from Conn Settings\n",
 					u2AuthTransSN);
 				}
+
+#if CFG_SUPPORT_H2E
+				if (prAdapter->prGlueInfo->rWpaInfo.u4AuthAlg &
+					AUTH_TYPE_SAE) {
+					kalMemCopy(&u2AuthStatusCode,
+						&prConnSettings->aucAuthData[2],
+						AUTH_STATUS_CODE_FIELD_LEN);
+					DBGLOG(SAA, INFO,
+						"[SAA]Get auth StatusCode=%d from Conn Settings\n",
+						u2AuthStatusCode);
+				}
+#endif
+
 			}
 			/* Update Station Record - Class 1 Flag */
 			if (prStaRec->ucStaState != STA_STATE_1) {
@@ -290,6 +306,27 @@ void saaSendAuthAssoc(IN struct ADAPTER *prAdapter,
 				 */
 				cnmStaRecChangeState(prAdapter,
 						prStaRec, STA_STATE_2);
+			}
+
+			/* Refine PHY type set based on updated Encrypt Status */
+			if (prStaRec->eStaType == STA_TYPE_LEGACY_AP) {
+				if (!
+					((prAdapter->rWifiVar.rConnSettings.eEncStatus ==
+						ENUM_ENCRYPTION3_ENABLED)
+					|| (prAdapter->rWifiVar.rConnSettings.eEncStatus ==
+						ENUM_ENCRYPTION3_KEY_ABSENT)
+					|| (prAdapter->rWifiVar.rConnSettings.eEncStatus ==
+						ENUM_ENCRYPTION_DISABLED)
+					|| (prAdapter->prGlueInfo->u2WSCAssocInfoIELen)
+#if CFG_SUPPORT_WAPI
+					|| (prAdapter->prGlueInfo->u2WapiAssocInfoIESz)
+#endif
+				)) {
+					DBGLOG(BSS, INFO,
+							"Ignore the HT Bit for TKIP as pairwise cipher configed!\n");
+					prStaRec->ucPhyTypeSet &=
+							~(PHY_TYPE_BIT_HT | PHY_TYPE_BIT_VHT);
+				}
 			}
 
 			rStatus =
@@ -971,6 +1008,13 @@ saaFsmRunEventTxDone(IN struct ADAPTER *prAdapter,
 
 	ASSERT(prStaRec);
 
+#if CFG_CHIP_RESET_SUPPORT
+	if (kalIsResetting()) {
+		DBGLOG(SAA, WARN, "Skip TxDone event due to chip is resetting\n");
+		return WLAN_STATUS_SUCCESS;
+	}
+#endif
+
 	if (rTxDoneStatus)
 		DBGLOG(SAA, INFO,
 		       "EVENT-TX DONE [status: %d][seq: %d]: Current Time = %d\n",
@@ -1182,7 +1226,7 @@ void saaFsmRunEventTxReqTimeOut(IN struct ADAPTER *prAdapter,
 	if (!prStaRec)
 		return;
 
-	DBGLOG(SAA, LOUD, "EVENT-TIMER: TX REQ TIMEOUT, Current Time = %d\n",
+	DBGLOG(SAA, STATE, "EVENT-TIMER: TX REQ TIMEOUT, Current Time = %d\n",
 	       kalGetTimeTick());
 
 	/* Trigger statistics log if Auth/Assoc Tx timeout */
@@ -1220,15 +1264,17 @@ void saaFsmRunEventRxRespTimeOut(IN struct ADAPTER *prAdapter,
 #if !CFG_SUPPORT_CFG80211_AUTH
 	enum ENUM_AA_STATE eNextState;
 #endif
-	DBGLOG(SAA, LOUD, "EVENT-TIMER: RX RESP TIMEOUT, Current Time = %d\n",
+	DBGLOG(SAA, STATE, "EVENT-TIMER: RX RESP TIMEOUT, Current Time = %d\n",
 	       kalGetTimeTick());
 
 	ASSERT(prStaRec);
 	if (!prStaRec)
 		return;
 #if CFG_SUPPORT_CFG80211_AUTH
-	/* Retry the last sent frame if possible */
-	saaSendAuthAssoc(prAdapter, prStaRec);
+	if (prStaRec->ucStaState != STA_STATE_3) {
+		/* Retry the last sent frame if possible */
+		saaSendAuthAssoc(prAdapter, prStaRec);
+	}
 #else
 	eNextState = prStaRec->eAuthAssocState;
 
@@ -1428,7 +1474,11 @@ void saaFsmRunEventRxAuth(IN struct ADAPTER *prAdapter,
 
 		/* Reset Send Auth/(Re)Assoc Frame Count */
 		prStaRec->ucTxAuthAssocRetryCount = 0;
-		if (u2StatusCode != STATUS_CODE_SUCCESSFUL) {
+		if ((u2StatusCode != STATUS_CODE_SUCCESSFUL)
+#if CFG_SUPPORT_H2E
+			&& (u2StatusCode != WLAN_STATUS_SAE_HASH_TO_ELEMENT)
+#endif
+		) {
 			DBGLOG(SAA, INFO,
 				"Auth Req was rejected by [" MACSTR
 				"], Status Code = %d\n",
@@ -1840,10 +1890,6 @@ uint32_t saaFsmRunEventRxDeauth(IN struct ADAPTER *prAdapter,
 			if (!IS_AP_STA(prStaRec))
 				break;
 
-			/* if state != CONNECTED, don't do disconnect again */
-			if (prAdapter->prGlueInfo->eParamMediaStateIndicated !=
-				PARAM_MEDIA_STATE_CONNECTED)
-				break;
 
 			prAisBssInfo = prAdapter->prAisBssInfo;
 

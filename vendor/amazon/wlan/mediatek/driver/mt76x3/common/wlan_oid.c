@@ -2430,6 +2430,7 @@ wlanoidSetRemoveWep(IN struct ADAPTER *prAdapter,
 		return WLAN_STATUS_INVALID_DATA;
 	}
 
+	kalMemZero(&rRemoveKey, sizeof(struct PARAM_REMOVE_KEY));
 	rRemoveKey.u4Length = sizeof(struct PARAM_REMOVE_KEY);
 	rRemoveKey.u4KeyIndex = *(uint32_t *) pvSetBuffer;
 
@@ -2679,6 +2680,14 @@ wlanoidSetAddKey(IN struct ADAPTER *prAdapter, IN void *pvSetBuffer,
 						.rAisSpecificBssInfo;
 					prAisSpecBssInfo->fgBipKeyInstalled =
 						TRUE;
+
+#if CFG_FTV_76x3_PMF_CERT_FIX
+					DBGLOG(RSN, INFO,
+						"Change BIP BC keyId from %d to 3\n",
+						prCmdKey->ucKeyId);
+					/* Set IGTK WTBL keyid 3 for WTBL to correcly search GTK */
+					prCmdKey->ucKeyId = 3;
+#endif
 				}
 			}
 #endif
@@ -2742,6 +2751,7 @@ wlanoidSetAddKey(IN struct ADAPTER *prAdapter, IN void *pvSetBuffer,
 #if CFG_SUPPORT_802_11W
 		/* AP PMF */
 		if (prCmdKey->ucAlgorithmId == CIPHER_SUITE_BIP) {
+			prCmdKey->ucKeyId = KEY_ID_BIP;
 			if (prCmdKey->ucIsAuthenticator) {
 				DBGLOG(RSN, INFO,
 				"Authenticator BIP bssid:%d\n",
@@ -2755,13 +2765,22 @@ wlanoidSetAddKey(IN struct ADAPTER *prAdapter, IN void *pvSetBuffer,
 						prCmdKey->ucAlgorithmId,
 						prCmdKey->ucKeyId);
 			} else {
-				prCmdKey->ucWlanIndex =
-				    secPrivacySeekForBcEntry(prAdapter,
-					    prBssInfo->ucBssIndex,
-					    prBssInfo->prStaRecOfAP->aucMacAddr,
-					    prBssInfo->prStaRecOfAP->ucIndex,
-					    prCmdKey->ucAlgorithmId,
-					    prCmdKey->ucKeyId);
+				if (prBssInfo->prStaRecOfAP) {
+					prCmdKey->ucWlanIndex =
+					    secPrivacySeekForBcEntry(prAdapter,
+						    prBssInfo->ucBssIndex,
+						    prBssInfo->prStaRecOfAP
+							->aucMacAddr,
+						    prBssInfo->prStaRecOfAP
+							->ucIndex,
+						    prCmdKey->ucAlgorithmId,
+						    prCmdKey->ucKeyId);
+
+#if CFG_FTV_76x3_PMF_CERT_FIX
+					kalMemCopy(prCmdKey->aucPeerAddr,
+						prBssInfo->prStaRecOfAP->aucMacAddr, MAC_ADDR_LEN);
+#endif
+				}
 			}
 
 			DBGLOG(RSN, INFO, "BIP BC wtbl index:%d\n",
@@ -2939,6 +2958,7 @@ wlanoidSetRemoveKey(IN struct ADAPTER *prAdapter,
 	u_int8_t fgRemoveBCKey = FALSE;
 	uint32_t ucRemoveBCKeyAtIdx = WTBL_RESERVED_ENTRY;
 	uint32_t u4KeyIndex;
+	u_int8_t fgIsOid = TRUE;
 
 	DEBUGFUNC("wlanoidSetRemoveKey");
 
@@ -2978,6 +2998,8 @@ wlanoidSetRemoveKey(IN struct ADAPTER *prAdapter,
 	prBssInfo = GET_BSS_INFO_BY_INDEX(prAdapter,
 					  prRemovedKey->ucBssIdx);
 	ASSERT(prBssInfo);
+	if (prRemovedKey->ucCtrlFlag & FLAG_RM_KEY_CTRL_WO_OID)
+		fgIsOid = FALSE;
 
 	u4KeyIndex = prRemovedKey->u4KeyIndex & 0x000000FF;
 #if CFG_SUPPORT_802_11W
@@ -3074,7 +3096,7 @@ wlanoidSetRemoveKey(IN struct ADAPTER *prAdapter,
 					  struct CMD_802_11_KEY);
 	prCmdInfo->pfCmdDoneHandler = nicCmdEventSetCommon;
 	prCmdInfo->pfCmdTimeoutHandler = nicOidCmdTimeoutCommon;
-	prCmdInfo->fgIsOid = g_fgIsOid;
+	prCmdInfo->fgIsOid = fgIsOid;
 	prCmdInfo->ucCID = CMD_ID_ADD_REMOVE_KEY;
 	prCmdInfo->fgSetQuery = TRUE;
 	prCmdInfo->fgNeedResp = FALSE;
@@ -7282,6 +7304,12 @@ wlanoidSetSwCtrlWrite(IN struct ADAPTER *prAdapter,
 		ucNss = (uint8_t)(u4Data & BITS(0, 3));
 		ucChannelWidth = (uint8_t)((u4Data & BITS(4, 7)) >> 4);
 		ucBssIndex = (uint8_t) u2SubId;
+
+		if (!IS_BSS_INDEX_VALID(ucBssIndex)) {
+			DBGLOG(RLM, ERROR,
+				"Invalid bssidx:%d\n", ucBssIndex);
+			break;
+		}
 
 		if ((u2SubId & BITS(8, 15)) != 0) { /* Debug OP change
 						     * parameters

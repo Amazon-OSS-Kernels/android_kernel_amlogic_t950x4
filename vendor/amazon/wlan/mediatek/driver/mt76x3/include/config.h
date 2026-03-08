@@ -204,6 +204,10 @@
 #define CFG_SUPPORT_IDC_CH_SWITCH	1
 #endif
 
+#ifndef CFG_DFS_NEWCH_DFS_FORCE_DISCONNECT
+#define CFG_DFS_NEWCH_DFS_FORCE_DISCONNECT	1
+#endif
+
 #if (CFG_SUPPORT_DFS == 1)	/* Add by Enlai */
 /* Quiet (802.11h) */
 #define CFG_SUPPORT_QUIET	0
@@ -1323,6 +1327,13 @@
 #define CFG_SUPPORT_SER			1
 #endif
 
+/*------------------------------------------------------------------------------
+ * Support H2E
+ *------------------------------------------------------------------------------
+ */
+#ifndef CFG_SUPPORT_H2E
+#define CFG_SUPPORT_H2E			1
+#endif
 
 /*------------------------------------------------------------------------------
  * Support thermal API
@@ -1448,6 +1459,10 @@
 
 #ifndef CFG_RESET_DUE_TO_REG_NETDEV_FAIL
 #define CFG_RESET_DUE_TO_REG_NETDEV_FAIL 0
+#endif
+
+#ifndef CFG_FTV_76x3_PMF_CERT_FIX
+#define CFG_FTV_76x3_PMF_CERT_FIX 0
 #endif
 
 /*******************************************************************************

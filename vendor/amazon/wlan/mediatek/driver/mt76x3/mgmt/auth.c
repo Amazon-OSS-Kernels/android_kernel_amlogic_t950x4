@@ -527,7 +527,11 @@ authSendAuthFrame(IN struct ADAPTER *prAdapter,
 		prFalseAuthFrame =
 		    (struct WLAN_AUTH_FRAME *)prFalseAuthSwRfb->pvHeader;
 
-		ASSERT(u2StatusCode != STATUS_CODE_SUCCESSFUL);
+		ASSERT((u2StatusCode != STATUS_CODE_SUCCESSFUL)
+#if CFG_SUPPORT_H2E
+			&& (u2StatusCode != WLAN_STATUS_SAE_HASH_TO_ELEMENT)
+#endif
+		);
 
 		pucTransmitAddr = prFalseAuthFrame->aucDestAddr;
 
@@ -839,6 +843,8 @@ authCheckRxAuthFrameStatus(IN struct ADAPTER *prAdapter,
 		DBGLOG(SAA, WARN,
 		       "Discard Auth frame with auth type = %d, current = %d\n",
 		       u2RxAuthAlgNum, prStaRec->ucAuthAlgNum);
+		/* Workaround for AP change Auth alg in response. */
+		prAuthFrame->u2AuthAlgNum = prStaRec->ucAuthAlgNum;
 		*pu2StatusCode = STATUS_CODE_AUTH_ALGORITHM_NOT_SUPPORTED;
 		return WLAN_STATUS_SUCCESS;
 	}
@@ -1499,6 +1505,7 @@ authProcessRxAuth1Frame(IN struct ADAPTER *prAdapter,
 			OUT uint16_t *pu2ReturnStatusCode)
 {
 	struct WLAN_AUTH_FRAME *prAuthFrame;
+	uint16_t u2RxStatusCode;
 	uint16_t u2ReturnStatusCode = STATUS_CODE_SUCCESSFUL;
 
 	ASSERT(prSwRfb);
@@ -1521,6 +1528,17 @@ authProcessRxAuth1Frame(IN struct ADAPTER *prAdapter,
 	}
 
 	/* 4 <4> Parse the Fixed Fields of Authentication Frame Body. */
+#if CFG_SUPPORT_CFG80211_AUTH
+	u2RxStatusCode = (prAuthFrame->aucAuthData[3] << 8) +
+						 prAuthFrame->aucAuthData[2];
+#else
+	u2RxStatusCode = prAuthFrame->u2StatusCode;
+#endif
+	if (u2RxStatusCode != STATUS_CODE_RESERVED) {
+		DBGLOG(AAA, LOUD, "Invalid Status code %d\n", u2RxStatusCode);
+		return WLAN_STATUS_FAILURE;
+	}
+
 	if (prAuthFrame->u2AuthAlgNum != u2ExpectedAuthAlgNum)
 		u2ReturnStatusCode = STATUS_CODE_AUTH_ALGORITHM_NOT_SUPPORTED;
 

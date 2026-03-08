@@ -281,6 +281,9 @@
 #define GED_EVENT_DOPT_WIFI_SCAN    (1 << 12)
 #endif /* CFG_SUPPORT_LOWLATENCY_MODE */
 
+/* Reserve Key_ID=3 for IGTK */
+#define KEY_ID_BIP	(3)
+
 /*******************************************************************************
  *                             D A T A   T Y P E S
  *******************************************************************************
@@ -552,11 +555,15 @@ struct PARAM_KEY {
 	/* Following add to change the original windows structure */
 };
 
+/* for more remove key control (ucCtrlFlag) */
+#define FLAG_RM_KEY_CTRL_WO_OID     BIT(0)	/* not OID operation */
+
 struct PARAM_REMOVE_KEY {
 	uint32_t u4Length;	/*!< Length of structure */
 	uint32_t u4KeyIndex;	/*!< KeyID */
 	uint8_t arBSSID[PARAM_MAC_ADDR_LEN];	/*!< MAC address */
 	uint8_t ucBssIdx;
+	uint8_t ucCtrlFlag;	/* Ctrl Flag for RM key CMD */
 };
 
 /*! \brief Default key */

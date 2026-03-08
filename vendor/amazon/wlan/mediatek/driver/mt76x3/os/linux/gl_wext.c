@@ -136,8 +136,8 @@ static const struct iw_priv_args rIwPrivTable[] = {
 	{IOCTL_GET_STRUCT, 0,
 	IW_PRIV_TYPE_CHAR | sizeof(struct NDIS_TRANSPORT_STRUCT), ""},
 
-	{IOCTL_GET_DRIVER, IW_PRIV_TYPE_CHAR | 2000, IW_PRIV_TYPE_CHAR |
-		2000, "driver"},
+	{IOCTL_GET_DRIVER, IW_PRIV_TYPE_CHAR | IW_PRIV_BUF_SIZE, 
+		IW_PRIV_TYPE_CHAR | IW_PRIV_BUF_SIZE, "driver"},
 
 #if CFG_SUPPORT_QA_TOOL
 	/* added for ATE iwpriv Command */
@@ -3510,6 +3510,8 @@ wext_set_encode_ext(IN struct net_device *prNetDev,
 	{
 
 		if ((prEnc->flags & IW_ENCODE_MODE) == IW_ENCODE_DISABLED) {
+			/* Reset flag to prevent the unexpected operation */
+			prRemoveKey->ucCtrlFlag = 0;
 			prRemoveKey->u4Length = sizeof(*prRemoveKey);
 			memcpy(prRemoveKey->arBSSID,
 			       prIWEncExt->addr.sa_data, 6);

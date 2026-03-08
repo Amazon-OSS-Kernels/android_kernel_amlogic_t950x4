@@ -144,6 +144,10 @@ struct APPEND_VAR_IE_ENTRY txAssocReqIETable[] = {
 #endif
 	{(ELEM_HDR_LEN + ELEM_MAX_LEN_WPA), NULL, rsnGenerateWPAIE}
 	,			/* 221 */
+#if CFG_SUPPORT_H2E
+	{0, rsnCalRSNXELen, rsnGenerateRSNXE}
+	,			/* 244 */
+#endif
 #if CFG_SUPPORT_OWE
 	{0, rsnCalOweIELen, rsnGenerateOWEIE} /* 255 */
 #endif
@@ -1609,7 +1613,15 @@ uint32_t assocProcessRxAssocReqFrame(IN struct ADAPTER *prAdapter,
 				prIeSupportedRate = SUP_RATES_IE(pucIE);
 
 			break;
-
+		case ELEM_ID_PWR_CAP:
+			if (IE_LEN(pucIE) != ELEM_MAX_LEN_POWER_CAP)
+				return WLAN_STATUS_FAILURE;
+			break;
+		case ELEM_ID_SUP_CHS:
+			if ((IE_LEN(pucIE) > ELEM_MAX_LEN_SUPPORTED_CHANNELS)
+			     || (IE_LEN(pucIE) & 0x01))
+				return WLAN_STATUS_FAILURE;
+			break;
 		case ELEM_ID_EXTENDED_SUP_RATES:
 			if (!prIeExtSupportedRate)
 				prIeExtSupportedRate = EXT_SUP_RATES_IE(pucIE);
@@ -1628,6 +1640,10 @@ uint32_t assocProcessRxAssocReqFrame(IN struct ADAPTER *prAdapter,
 				rsnParserCheckForRSNCCMPPSK(prAdapter, prIeRsn,
 							    prStaRec,
 							    &u2StatusCode);
+				if (u2StatusCode ==
+				    STATUS_CODE_INVALID_INFO_ELEMENT) {
+					return WLAN_STATUS_FAILURE;
+				}
 				if (u2StatusCode != STATUS_CODE_SUCCESSFUL) {
 					*pu2StatusCode = u2StatusCode;
 					return WLAN_STATUS_SUCCESS;

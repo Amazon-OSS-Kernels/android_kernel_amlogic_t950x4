@@ -144,6 +144,12 @@ u_int8_t g_fgIsOid = TRUE;
 #ifdef CONFIG_PM_SLEEP
 static int pm_resume_done = 0;
 #endif
+
+#ifdef CONFIG_IDME
+static u_int8_t g_fgIsIdmeMacAddrExist = FALSE;
+static uint8_t rIdmeMacAddr[PARAM_MAC_ADDR_LEN];
+#endif
+
 /*******************************************************************************
  *                                 M A C R O S
  *******************************************************************************
@@ -4282,6 +4288,12 @@ u_int8_t kalRetrieveNetworkAddress(IN struct GLUE_INFO *prGlueInfo,
 	if (prMacAddr && 0 == idme_get_mac_addr((unsigned char *)prMacAddr,
 		(sizeof(uint8_t) * PARAM_MAC_ADDR_LEN))) {
 		DBGLOG(INIT, INFO, "use IDME mac addr\n");
+		g_fgIsIdmeMacAddrExist = TRUE;
+		COPY_MAC_ADDR(rIdmeMacAddr, prMacAddr);
+		return TRUE;
+	} else if (prMacAddr && g_fgIsIdmeMacAddrExist) {
+		COPY_MAC_ADDR(prMacAddr, rIdmeMacAddr);
+		DBGLOG(INIT, STATE, "re-use pre-stored IDME mac addr\n");
 		return TRUE;
 	}
 #endif
@@ -6282,11 +6294,13 @@ static ssize_t kalMetWriteProcfs(struct file *file,
 	int u8MetProfEnable;
 
 	IN struct GLUE_INFO *prGlueInfo;
-	ssize_t result;
 
 	u4CopySize = (count < (sizeof(acBuf) - 1)) ? count :
 		     (sizeof(acBuf) - 1);
-	result = copy_from_user(acBuf, buffer, u4CopySize);
+	if (copy_from_user(acBuf, buffer, u4CopySize)) {
+		DBGLOG(INIT, ERROR, "error of copy from user\n");
+		return -EFAULT;
+	}
 	acBuf[u4CopySize] = '\0';
 
 	if (sscanf(acBuf, " %d %d", &u8MetProfEnable,
@@ -6308,13 +6322,15 @@ static ssize_t kalMetCtrlWriteProcfs(struct file *file,
 	char acBuf[128 + 1];	/* + 1 for "\0" */
 	uint32_t u4CopySize;
 	int u8MetProfEnable;
-	ssize_t result;
 
 	IN struct GLUE_INFO *prGlueInfo;
 
 	u4CopySize = (count < (sizeof(acBuf) - 1)) ? count :
 		     (sizeof(acBuf) - 1);
-	result = copy_from_user(acBuf, buffer, u4CopySize);
+	if (copy_from_user(acBuf, buffer, u4CopySize)) {
+		DBGLOG(INIT, ERROR, "error of copy from user\n");
+		return -EFAULT;
+	}
 	acBuf[u4CopySize] = '\0';
 
 	if (sscanf(acBuf, " %d", &u8MetProfEnable) == 1)
@@ -6333,13 +6349,15 @@ static ssize_t kalMetPortWriteProcfs(struct file *file,
 	char acBuf[128 + 1];	/* + 1 for "\0" */
 	uint32_t u4CopySize;
 	int u16MetUdpPort;
-	ssize_t result;
 
 	IN struct GLUE_INFO *prGlueInfo;
 
 	u4CopySize = (count < (sizeof(acBuf) - 1)) ? count :
 		     (sizeof(acBuf) - 1);
-	result = copy_from_user(acBuf, buffer, u4CopySize);
+	if (copy_from_user(acBuf, buffer, u4CopySize)) {
+		DBGLOG(INIT, ERROR, "error of copy from user\n");
+		return -EFAULT;
+	}
 	acBuf[u4CopySize] = '\0';
 
 	if (sscanf(acBuf, " %d", &u16MetUdpPort) == 1)
@@ -6523,6 +6541,7 @@ void kalWowInit(IN struct GLUE_INFO *prGlueInfo)
 {
 	kalMemZero(&prGlueInfo->prAdapter->rWowCtrl.stWowPort,
 		   sizeof(struct WOW_PORT));
+	wlanCfgSetWowPorts(prGlueInfo->prAdapter);
 	prGlueInfo->prAdapter->rWowCtrl.ucReason = INVALID_WOW_WAKE_UP_REASON;
 
 	prGlueInfo->prAdapter->mdns_offload_enable = FALSE;
@@ -6581,6 +6600,22 @@ void kalWowProcess(IN struct GLUE_INFO *prGlueInfo,
 	if (enable && prGlueInfo->prAdapter->mdns_offload_enable) {
 		kalSendDelMdnsCacheToFw(prGlueInfo);
 		kalSendAddMdnsCacheToFw(prGlueInfo);
+	}
+
+	/* add mDNS wow */
+	if (enable && prGlueInfo->prAdapter->mdns_wow_pattern_len > 0) {
+		rCmdWowlanParam.mdns_wow_pattern_len =
+			prGlueInfo->prAdapter->mdns_wow_pattern_len;
+		kalStrnCpy(rCmdWowlanParam.mdns_wow_pattern,
+			   prGlueInfo->prAdapter->mdns_wow_pattern,
+			   prGlueInfo->prAdapter->mdns_wow_pattern_len);
+		DBGLOG(PF, INFO, "mDNS wow pattern:%s len=%d\n",
+			rCmdWowlanParam.mdns_wow_pattern,
+			rCmdWowlanParam.mdns_wow_pattern_len);
+	}
+	else {
+		rCmdWowlanParam.mdns_wow_pattern_len = 0;
+		DBGLOG(PF, INFO, "mDNS wow disabled.\n");
 	}
 
 	DBGLOG(PF, INFO,
@@ -8822,11 +8857,9 @@ unsigned long kal_kallsyms_lookup_name(const char *name)
 {
 	unsigned long ret = 0;
 
-#if 1 // frog  MTK TODO
+	DBGLOG(INIT, INFO, "%s(%s)\r\n", __func__, name);
 	ret = (unsigned long)__symbol_get(name);
-#else
-	ret = kallsyms_lookup_name(name);
-#endif
+
 	if (ret) {
 #ifdef CONFIG_ARM
 #ifdef CONFIG_THUMB2_KERNEL
@@ -8836,6 +8869,12 @@ unsigned long kal_kallsyms_lookup_name(const char *name)
 #endif
 	}
 	return ret;
+}
+
+void kal_kallsyms_put(const char *name)
+{
+	DBGLOG(INIT, INFO, "%s(%s)\r\n", __func__, name);
+	__symbol_put(name);
 }
 
 #ifdef CONFIG_PM_SLEEP

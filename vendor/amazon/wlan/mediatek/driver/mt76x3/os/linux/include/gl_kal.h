@@ -1659,6 +1659,8 @@ int kalRxNapiPoll(struct napi_struct *napi, int budget);
 
 unsigned long kal_kallsyms_lookup_name(const char *name);
 
+void kal_kallsyms_put(const char *name);
+
 #ifdef CONFIG_PM_SLEEP
 int32_t kalPmResumeState(void);
 int32_t kalPmResumeHandler(struct notifier_block *notifier, unsigned long pm_event, void *unused);

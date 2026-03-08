@@ -1365,6 +1365,8 @@ void wlanClearDataQueue(IN struct ADAPTER *prAdapter);
 void wlanClearRxToOsQueue(IN struct ADAPTER *prAdapter);
 #endif
 
+void wlanClearPendingCommandQueue(IN struct ADAPTER *prAdapter);
+
 void wlanReleaseCommand(IN struct ADAPTER *prAdapter,
 			IN struct CMD_INFO *prCmdInfo,
 			IN enum ENUM_TX_RESULT_CODE rTxDoneStatus);
@@ -1623,6 +1625,8 @@ void wlanInitFeatureOption(IN struct ADAPTER *prAdapter);
 void wlanCfgSetSwCtrl(IN struct ADAPTER *prAdapter);
 
 void wlanCfgSetChip(IN struct ADAPTER *prAdapter);
+
+void wlanCfgSetWowPorts(IN struct ADAPTER *prAdapter);
 
 void wlanCfgSetDebugLevel(IN struct ADAPTER *prAdapter);
 

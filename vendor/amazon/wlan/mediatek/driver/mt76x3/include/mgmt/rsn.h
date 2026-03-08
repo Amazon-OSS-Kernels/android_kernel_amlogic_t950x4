@@ -179,6 +179,9 @@
 #define GTK_REKEY_CMD_MODE_RPY_OFFLOAD_ON	4
 #define GTK_REKEY_CMD_MODE_RPY_OFFLOAD_OFF	5
 
+#define SA_QUERY_RETRY_TIMEOUT	3000
+#define SA_QUERY_TIMEOUT	501
+
 /*******************************************************************************
  *                             D A T A   T Y P E S
  *******************************************************************************
@@ -347,6 +350,12 @@ uint32_t rsnCalOweIELen(IN struct ADAPTER *prAdapter,
 	IN uint8_t ucBssIndex, struct STA_RECORD *prStaRec);
 #endif
 
+#if CFG_SUPPORT_H2E
+void rsnGenerateRSNXE(IN struct ADAPTER *prAdapter,
+	IN OUT struct MSDU_INFO *prMsduInfo);
+uint32_t rsnCalRSNXELen(IN struct ADAPTER *prAdapter,
+	IN uint8_t ucBssIndex, struct STA_RECORD *prStaRec);
+#endif
 
 /*******************************************************************************
  *                              F U N C T I O N S
