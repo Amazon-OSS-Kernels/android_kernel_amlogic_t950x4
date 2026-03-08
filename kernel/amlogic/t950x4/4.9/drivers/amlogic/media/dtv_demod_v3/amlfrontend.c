@@ -129,10 +129,10 @@ static int dvb_tuner_delay = 100;
 module_param(dvb_tuner_delay, int, 0644);
 MODULE_PARM_DESC(dvb_atsc_count, "dvb_tuner_delay");
 
-static bool blind_scan_new = true;
-module_param(blind_scan_new, bool, 0644);
-MODULE_PARM_DESC(blind_scan_new, "blind_scan_new");
-
+unsigned char blind_scan_new = 0x2;
+module_param(blind_scan_new, byte, 0644);
+MODULE_PARM_DESC(blind_scan_new,
+		"blind_scan algorithm version: 0x0 1st, 0x1 2nd, 0x2 3rd");
 const char *name_reg[] = {
 	"demod",
 	"iohiu",
@@ -4148,7 +4148,7 @@ static int dtvdemod_dvbs_blind_check_signal(struct dvb_frontend *fe,
 	PR_DVBS("agc1_iq_amp: %d, agc1_iq_power: %d.\n", agc1_iq_amp, agc1_iq_power);
 #endif
 
-	if (blind_scan_new) {
+	if (blind_scan_new == 0x1) {
 		if (*signal_state == 0 || *signal_state == 1) {
 			asperity = dvbs_blind_check_AGC2_bandwidth_new(next_step_khz,
 					&next_step_khz1, signal_state);
@@ -5667,7 +5667,7 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 
 	total_result.tp_num = 0;
 
-	if (blind_scan_new && freq_max == 2150000)
+	if (blind_scan_new == 0x1 && freq_max == 2150000)
 		freq_max = freq_max + freq_step;
 
 	/* 950MHz ~ 2150MHz. */
@@ -5718,7 +5718,7 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 				dvb_frontend_add_event(fe, status);
 		}
 
-		if (blind_scan_new) {
+			if (blind_scan_new == 0x1) {
 			if (asperity == 2 && signal_state == 2) {
 				signal_state = 0;
 				next_step_khz = freq_add;
@@ -5855,6 +5855,30 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 	}
 }
 
+static void blind_scan_work(struct work_struct *work)
+{
+	struct amldtvdemod_device_s *devp = container_of(work,
+			struct amldtvdemod_device_s, blind_scan_work);
+
+	if (devp->last_delsys == SYS_UNDEFINED) {
+		PR_ERR("%s: err: delsys not set!\n", __func__);
+		return;
+	}
+
+	switch (devp->last_delsys) {
+	case SYS_DVBS:
+	case SYS_DVBS2:
+		//the 3rd version of the dvbs blind scan algorithm solution
+		if (blind_scan_new == 0x2)
+			dvbs_blind_scan_new_work2(devp);
+		else
+			dvbs_blind_scan_new_work(work);
+		break;
+	default:
+		break;
+	}
+}
+
 /* platform driver*/
 static int aml_dtvdemod_probe(struct platform_device *pdev)
 {
@@ -5945,9 +5969,9 @@ static int aml_dtvdemod_probe(struct platform_device *pdev)
 		INIT_DELAYED_WORK(&devp->fw_dwork, dtvdemod_fw_dwork);
 		schedule_delayed_work(&devp->fw_dwork, 10 * HZ);
 
-		/* workqueue for dvbs blind scan process */
+		/* workqueue for blind scan process */
 		//INIT_WORK(&devp->blind_scan_work, dvbs_blind_scan_work);
-		INIT_WORK(&devp->blind_scan_work, dvbs_blind_scan_new_work);
+		INIT_WORK(&devp->blind_scan_work, blind_scan_work);
 	}
 
 	PR_INFO("[amldtvdemod.] : version: %s (%s),T2 fw version: %s, probe ok.\n",

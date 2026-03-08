@@ -28,7 +28,7 @@
 #include <linux/mutex.h>
 
 #include <linux/amlogic/media/frame_provider/tvin/tvin.h>
-
+#include <linux/math64.h>
 
 MODULE_PARM_DESC(debug_demod, "\n\t\t Enable frontend debug information");
 static int debug_demod;
@@ -1861,3 +1861,142 @@ void debug_adc_pll(void)
 
 }
 
+static int x_to_power_y(int number, unsigned int power)
+{
+	unsigned int i;
+	int result = 1;
+
+	for (i = 0; i < power; i++)
+		result *= number;
+
+	return result;
+}
+
+void fe_l2a_set_symbol_rate(struct fe_l2a_internal_param *pparams, unsigned int symbol_rate)
+{
+	//unsigned int reg_field2, reg_field1, reg_field0;
+	unsigned int reg32;
+	int tmp;
+	int tmp_f;
+
+	//reg_field2 = FLD_FL2A_DVBSX_DEMOD_SFRINIT2_SFR_INIT;
+	//reg_field1 = FLD_FL2A_DVBSX_DEMOD_SFRINIT1_SFR_INIT;
+	//reg_field0 = FLD_FL2A_DVBSX_DEMOD_SFRINIT0_SFR_INIT;
+
+	/* sfr_init = sfr_init(MHz) * 2^24 / ckadc (unsigned), ckadc = nsamples * Mclk */
+	/* max SR: MCLK/2=67.5MS/s rounded to 70MS/s */
+
+	/*reg32 = (symbol_rate / 1000) * (1 << 15);
+	 *reg32 = reg32 / (pParams->master_clock / 1000);
+	 *reg32 = reg32 * (1 << 9);
+
+	 *error |= fe_write_field(pParams->handle_demod, reg_field2,
+	 *		((s32)reg32 >> 16) & 0xFF);
+	 *error |= fe_write_field(pParams->handle_demod, reg_field1,
+	 *		((s32)reg32 >> 8) & 0xFF);
+	 *error |= fe_write_field(pParams->handle_demod, reg_field0,
+	 *		((s32)reg32) & 0xFF);
+	 */
+
+	//reg32 = (symbol_rate * 16777216)/master_clock;
+	reg32 = (symbol_rate / 1000) * (1 << 15);
+	//printf("pParams->master_clock is %d\n",pParams->master_clock);
+	//pParams->master_clock = 135000000;
+
+	//reg32 = reg32 / (pParams->master_clock / 1000);
+	reg32 = reg32 / ADC_CLK_135M;
+	reg32 = reg32 * (1 << 9);
+	PR_DVBC("reg32: %d, symb_rate: %d.\n", reg32, symbol_rate);
+
+	dvbs_wr_byte(0x9f0, (reg32 >> 16) & 0xff);
+	dvbs_wr_byte(0x9f1, (reg32 >> 8) & 0xff);
+	dvbs_wr_byte(0x9f2, reg32 & 0xff);
+	tmp = (((dvbs_rd_byte(0x9f0)) << 16) + ((dvbs_rd_byte(0x9f1)) << 8) +
+			(dvbs_rd_byte(0x9f2)));
+	tmp_f = tmp * 135 / 16777216;
+	PR_DVBC(" after %s init 9f0 sr = %d %d Mbps\n", __func__, tmp, tmp_f);
+}
+
+void fe_l2a_get_agc2accu(struct fe_l2a_internal_param *pparams, unsigned int *pintegrator)
+{
+	unsigned int agc2acc_mant, agc2acc_exp, fld_value[2] = {0};
+
+	unsigned int mantissa;
+	signed int exponent;
+	//unsigned long long Value;
+	//unsigned int Value;
+	unsigned int AGC2I1, AGC2I0;
+	unsigned short mant;
+	unsigned char exp;
+	signed int exp_abs_s32 = 0, exp_s32 = 0;
+
+	fld_value[0] = dvbs_rd_byte(0x9a0);
+	fld_value[1] = (dvbs_rd_byte(0x9a1) & 0xc0) >> 6;//9a1&c0
+	mantissa = fld_value[1] + (fld_value[0] << 2);
+	fld_value[0] = (dvbs_rd_byte(0x9a1) & 0x3f);
+	exponent = (signed int)(fld_value[0]);
+
+	*pintegrator = mantissa * (unsigned int)POWOF2(exponent + 5 - 9); /* 2^5=32 */
+
+	/* Georg's method */
+	fld_value[0] = dvbs_rd_byte(0x9a0);
+	fld_value[1] = (dvbs_rd_byte(0x9a1) & 0xc0) >> 6;//9a1&c0
+	agc2acc_mant = (MAKEWORD(fld_value[0], fld_value[1])) >> 6;
+	agc2acc_exp = dvbs_rd_byte(0x9a1) & 0x3f;
+	if (((int)(agc2acc_exp - 9)) >= 0)
+		*pintegrator = agc2acc_mant * (unsigned int)POWOF2(agc2acc_exp - 9);
+	//printf("Integrator is %d\n",*pIntegrator);
+
+	AGC2I1 = dvbs_rd_byte(0x9a0);
+	//printf("0x9a0 is %x\n",AGC2I1);
+	AGC2I0 = dvbs_rd_byte(0x9a1);
+	mant = (unsigned short)((AGC2I1 * 4) + ((AGC2I0 >> 6) & 0x3));
+	exp = (unsigned char)(AGC2I0 & 0x3f);
+	PR_DVBC("mant is %d\n", mant);
+	/*evaluate exp-9 */
+	exp_s32 = (signed int)(exp - 9);
+
+	/*evaluate exp -9 sign */
+	if (exp_s32 < 0) {
+		/* if exp_s32<0 divide the mantissa  by 2^abs(exp_s32)*/
+		exp_abs_s32 = x_to_power_y(2, (unsigned int)(-exp_s32));
+		*pintegrator = (unsigned int)((1000 * (mant)) / exp_abs_s32);
+		PR_DVBC("Integrator is %d\n", *pintegrator);
+	} else {
+		/*if exp_s32> 0 multiply the mantissa  by 2^(exp_s32)*/
+		exp_abs_s32 = x_to_power_y(2, (unsigned int)(exp_s32));
+		*pintegrator = (unsigned int)((1000 * mant) * exp_abs_s32);
+		PR_DVBC("Integrator is %d\n", *pintegrator);
+	}
+}
+
+void float_division(long long dividend, unsigned int divisor, int *integer, unsigned int *decimal)
+{
+	unsigned long long tmp = 0;
+	unsigned int remainder = 0;
+	bool is_negative = false;
+
+	//PR_DBGL("%s: %lld %d\n", __func__, dividend, divisor);
+	if (divisor == 0) {
+		pr_err("%s: divisor error!", __func__);
+		return;
+	}
+	if (dividend == 0) {
+		*integer = 0;
+		*decimal = 0;
+	} else {
+		if (dividend < 0)
+			is_negative = true;
+
+		tmp = abs(dividend);
+		//remainder = tmp % divisor;
+		if (is_negative)
+			*integer = (int)(0 - div_u64_rem(tmp, divisor, &remainder));
+		else
+			*integer = (int)div_u64_rem(tmp, divisor, &remainder);
+
+		//*decimal = (unsigned int)(remainder * 1000 / divisor);
+		*decimal = (unsigned int)div_u64((unsigned long long)remainder * 1000, divisor);
+	}
+	//PR_DBGL("%s: remainder %lld result=%d.%d\n", __func__, remainder, *integer, *decimal);
+}

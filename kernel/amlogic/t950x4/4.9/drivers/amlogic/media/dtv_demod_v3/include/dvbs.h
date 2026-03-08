@@ -18,6 +18,8 @@
 #ifndef __DVBS_FUNC_H__
 #define __DVBS_FUNC_H__
 #include "dvb_frontend.h"
+#include "aml_demod.h"
+#include "amlfrontend.h"
 
 #define ALIGN_24	16777216
 #define SR_LOW_THRD	11000000
@@ -30,11 +32,25 @@
 #define BLIND_SEARCH_BW_MIN           (6)
 #define BLIND_SEARCH_EDGE_NUM         (10)
 
+#define BLIND_SEARCH_POW_TH1_DVBS 40000
+#define BLIND_SEARCH_POW_TH2_DVBS 18000
+#define BLIND_SEARCH_POW_TH3_DVBS 60000
+#define BLIND_SEARCH_BW_DVBS      6000
+#define BLIND_SR_DIFF_DVBS        1000
+#define BLIND_CR_DIFF_DVBS        2000
+//#define BLIND_SEARCH_SR_UP_DVBS   3000
+//#define BLIND_SEARCH_SR_LOW_DVBS  3000
+//#define BLIND_SEARCH_TIM_DVBS     200
+//#define BLIND_SEARCH_TIM1_DVBS     50
+//#define BLIND_SEARCH_BW_MIN_DVBS  7
+
 #define CNR_HIGH	0xcae
 #define CNR_LOW		0xcad
 #define AUTOSR_REG 0x922
 #define AUTOSR_OFF 0xcc
 #define AUTOSR_ON  0xdc
+
+extern unsigned char blind_scan_new;
 
 enum diseq_irq_flag {
 	DISEQ_IRQGAPBURST = 0x01,
@@ -183,5 +199,6 @@ void dvbs_blind_fft_result_handle(struct fft_total_result *total_result);
 unsigned int dvbs_blind_check_AGC2_bandwidth_new(int *next_step_khz,
 	int *next_step_khz1, int *signal_state);
 unsigned int dvbs_blind_check_AGC2_bandwidth_old(int *next_step_khz);
+void dvbs_blind_scan_new_work2(struct amldtvdemod_device_s *devp);
 
 #endif
