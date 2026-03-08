@@ -36,6 +36,10 @@
 
 #define HHI_GCLK_MPEG0			(0x50 << 2) /* (0xC883C000 + 0x140) */
 #define HHI_HDMIRX_CLK_CNTL		0x200 /* (0xC883C000 + 0x200)  */
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+#define MODET_CLK_EN			_BIT(24)
+#define CFG_CLK_EN			_BIT(8)
+#endif
 #define HHI_HDMIRX_AUD_CLK_CNTL	0x204 /* 0x1081 */
 #define HHI_AXI_CLK_CTNL		(0xb8 * 4)
 #define HHI_VDAC_CNTL0			(0xbb * 4)
@@ -1428,6 +1432,9 @@ void aml_phy_iq_skew_monitor(void);
 void rx_ddc_active_monitor(void);
 void rx_i2c_init(void);
 bool is_ddc_filter_en(void);
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+void rx_clk_en(bool en);
+#endif
 #endif
 
 

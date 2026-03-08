@@ -1367,7 +1367,7 @@ EXPORT_SYMBOL(DWC_WORKQ_SCHEDULE);
 EXPORT_SYMBOL(DWC_WORKQ_SCHEDULE_DELAYED);
 EXPORT_SYMBOL(DWC_WORKQ_PENDING);
 
-static int dwc_common_port_init_module(void)
+static int __init dwc_common_port_init_module(void)
 {
 	int result = 0;
 
@@ -1393,7 +1393,7 @@ static int dwc_common_port_init_module(void)
 	return result;
 }
 
-static void dwc_common_port_exit_module(void)
+static void __exit dwc_common_port_exit_module(void)
 {
 	DWC_ERROR("Module dwc_common_port exit\n");
 

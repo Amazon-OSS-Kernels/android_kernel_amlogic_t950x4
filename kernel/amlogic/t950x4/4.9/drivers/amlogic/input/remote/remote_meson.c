@@ -864,6 +864,8 @@ static int remote_probe(struct platform_device *pdev)
 	input_set_capability(chip->r_dev->input_device, EV_KEY, KEY_CUSTOM_2);
 	input_set_capability(chip->r_dev->input_device, EV_KEY, KEY_CUSTOM_3);
 	input_set_capability(chip->r_dev->input_device, EV_KEY, KEY_CUSTOM_4);
+	input_set_capability(chip->r_dev->input_device, EV_KEY, KEY_CUSTOM_6);
+	input_set_capability(chip->r_dev->input_device, EV_KEY, KEY_CUSTOM_7);
 
 	device_init_wakeup(&pdev->dev, 1);
 	dev_pm_set_wake_irq(&pdev->dev, chip->irqno);
@@ -962,6 +964,10 @@ static int remote_resume(struct device *dev)
 		key_code = KEY_CUSTOM_3;
 	else if (resume_method == REMOTE_CUSTOM4_WAKEUP)
 		key_code = KEY_CUSTOM_4;
+	else if (resume_method == REMOTE_CUSTOM5_WAKEUP)
+		key_code = KEY_CUSTOM_6;
+	else if (resume_method == REMOTE_CUSTOM6_WAKEUP)
+		key_code = KEY_CUSTOM_7;
 	else
 		pr_warn("Resume method=%u is NOT supported.\n", resume_method);
 

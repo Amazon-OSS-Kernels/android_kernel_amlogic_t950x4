@@ -753,6 +753,11 @@ static int customer_panel_lumin = 380;
 module_param(customer_panel_lumin, int, 0664);
 MODULE_PARM_DESC(customer_panel_lumin, "\n customer_panel_lumin\n");
 
+static int force_lumin_en;
+module_param(force_lumin_en, int, 0664);
+MODULE_PARM_DESC(force_lumin_en, "\n force_lumin_en\n");
+
+
 int customer_hdr_clipping;
 module_param(customer_hdr_clipping, int, 0664);
 MODULE_PARM_DESC(customer_hdr_clipping, "\n customer_hdr_clipping\n");
@@ -6880,6 +6885,9 @@ void hdr10_plus_process_update(
 			panel_lumin = vinfo->hdr_info.lumi_max;
 		else
 			panel_lumin = customer_panel_lumin;
+
+		if (force_lumin_en)
+			panel_lumin = customer_panel_lumin;
 	} else {
 		panel_lumin = customer_panel_lumin;
 	}
@@ -7636,8 +7644,11 @@ static int vpp_matrix_update(
 			signal_type_changed(vf, vinfo, vd_path);
 
 	if ((flags & CSC_FLAG_CHECK_OUTPUT) &&
-	    (signal_change_flag & SIG_PRI_INFO)) {
-		signal_change_latch |= SIG_PRI_INFO;
+	    (signal_change_flag & (SIG_PRI_INFO | SIG_CS_CHG))) {
+		if (signal_change_flag & SIG_PRI_INFO)
+			signal_change_latch |= SIG_PRI_INFO;
+		if (signal_change_flag & SIG_CS_CHG)
+			signal_change_latch |= SIG_CS_CHG;
 	} else if (flags & CSC_FLAG_TOGGLE_FRAME) {
 		signal_change_flag |= signal_change_latch;
 		signal_change_latch = 0;
@@ -7666,6 +7677,11 @@ static int vpp_matrix_update(
 			return 2;
 		}
 	}
+
+	/*used for force process when repeat frame, run the full flow*/
+	if (video_process_status[vd_path] == HDR_MODULE_ON &&
+	    (video_process_flags[vd_path] & PROC_FLAG_FORCE_PROCESS))
+		signal_change_flag |= SIG_FORCE_CHG;
 
 	if (is_dolby_vision_on() &&
 	    ((vd_path == VD1_PATH) ||
@@ -7789,7 +7805,7 @@ static int vpp_matrix_update(
 	}
 
 	if ((get_cpu_type() >= MESON_CPU_MAJOR_ID_G12A) &&
-	    (signal_change_flag & (SIG_RANGE_CHG | SIG_BS_CHG))) {
+	    (signal_change_flag & (SIG_CS_CHG | SIG_RANGE_CHG | SIG_BS_CHG))) {
 		if (vinfo->mode != VMODE_LCD) {
 			mtx_setting(POST2_MTX, MATRIX_NULL, MTX_OFF);
 		} else {
@@ -7826,27 +7842,49 @@ static int vpp_matrix_update(
 				WRITE_VPP_REG_BITS(VPP_VADJ2_MISC, 1, 1, 1);
 				if (bs_3dlut_en) {
 					if (bs_proc_en) {
-						WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
-							0, 1, 1);
-						WRITE_VPP_REG_BITS(VPP_LUT3D_CTRL,
-							1, 2, 1);
-						mtx_init(POST2_MTX, MATRIX_YUV709F_YUV709,
-							MTX_OFF);
-						vpp_enable_lut3d(1, 1);
+						if (csc_type == VPP_MATRIX_YUV709F_RGB) {
+							WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
+								1, 1, 1);
+							WRITE_VPP_REG_BITS(VPP_LUT3D_CTRL,
+								1, 2, 1);
+							mtx_init(POST2_MTX, MATRIX_YUV709F_YUV709,
+								MTX_ON);
+							vpp_enable_lut3d(1, 1);
+						} else {
+							WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
+								0, 1, 1);
+							WRITE_VPP_REG_BITS(VPP_LUT3D_CTRL,
+								1, 2, 1);
+							mtx_init(POST2_MTX, MATRIX_YUV709F_YUV709,
+								MTX_OFF);
+							vpp_enable_lut3d(1, 1);
+						}
 					} else {
-						WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
-							1, 1, 1);
-						WRITE_VPP_REG_BITS(VPP_LUT3D_CTRL,
-							0, 2, 1);
-						mtx_setting(
-						POST2_MTX,
-						MATRIX_YUV709_RGB, MTX_ON);
-						vpp_enable_lut3d(0, 1);
+						if (csc_type == VPP_MATRIX_YUV709F_RGB) {
+							WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
+								1, 1, 1);
+							WRITE_VPP_REG_BITS(VPP_LUT3D_CTRL,
+								1, 2, 1);
+							mtx_setting(POST2_MTX,
+							MATRIX_YUV709F_RGB, MTX_ON);
+							vpp_enable_lut3d(0, 1);
+						} else {
+							WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
+								1, 1, 1);
+							WRITE_VPP_REG_BITS(VPP_LUT3D_CTRL,
+								0, 2, 1);
+							mtx_setting(POST2_MTX,
+							MATRIX_YUV709_RGB, MTX_ON);
+							vpp_enable_lut3d(0, 1);
+						}
 					}
 				} else {
-					mtx_setting(
-					POST2_MTX,
-					csc_type, MTX_ON);
+					if (csc_type == VPP_MATRIX_YUV709F_RGB)
+						mtx_setting(POST2_MTX,
+						MATRIX_YUV709F_RGB, MTX_ON);
+					else
+						mtx_setting(POST2_MTX,
+						MATRIX_YUV709_RGB, MTX_ON);
 				}
 			}
 		}
@@ -8070,7 +8108,9 @@ int amvecm_matrix_process(
 			       vd_path + 1);
 		}
 
-		if (pre_bs_proc_en != bs_proc_en) {
+		if (pre_bs_proc_en != bs_proc_en &&
+			!is_video_layer_on(VD1_PATH) &&
+			!is_video_layer_on(VD2_PATH)) {
 			if (is_video_layer_on(vd_path))
 				null_vf_cnt[vd_path] = 0;
 			else
@@ -8271,6 +8311,20 @@ int amvecm_matrix_process(
 		}
 	}
 	return 0;
+}
+
+void force_toggle(void)
+{
+	enum vd_path_e vd_path;
+
+	for (vd_path = VD1_PATH; vd_path < VD_PATH_MAX; vd_path++) {
+		if (null_vf_cnt[vd_path] == 0) {
+			video_process_flags[vd_path] |=
+				PROC_FLAG_FORCE_PROCESS;
+			pr_csc(2, "vd%d: force toggle for API set\n",
+				vd_path + 1);
+		}
+	}
 }
 
 int amvecm_hdr_dbg(u32 sel)

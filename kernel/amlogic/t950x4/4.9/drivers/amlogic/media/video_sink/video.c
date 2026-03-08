@@ -127,12 +127,14 @@ int video_vsync_viu2 = -ENXIO;
 
 static struct ai_scenes_pq vpp_scenes[AI_SCENES_MAX];
 static u32 cur_omx_index;
+static u32 set_omx_index;
 
 struct video_frame_detect_s {
 	u32 interrupt_count;
 	u32 start_receive_count;
 };
 
+static int tvin_source_type;
 static int di_get;
 static int di_put;
 static int di_release;
@@ -521,10 +523,71 @@ int video_property_notify(int flag)
 
 void get_video_axis_offset(s32 *x_offset, s32 *y_offset)
 {
+#ifdef CONFIG_ENABLE_AFD
+	s32 x_end, y_end;
+#endif
 	struct disp_info_s *layer = &glayer_info[0];
+#ifdef CONFIG_ENABLE_AFD
+	const struct vinfo_s *info = get_current_vinfo();
 
-	*x_offset = layer->layer_left;
-	*y_offset = layer->layer_top;
+	if (!info) {
+		*x_offset = 0;
+		*y_offset = 0;
+		return;
+	}
+
+	/* TODO: mirror case */
+	if (layer->reverse) {
+		/* reverse x/y start */
+		x_end = layer->layer_left + layer->layer_width - 1;
+		*x_offset = info->width - x_end - 1;
+		y_end = layer->layer_top + layer->layer_height - 1;
+		*y_offset = info->height - y_end - 1;
+	} else {
+#endif
+		*x_offset = layer->layer_left;
+		*y_offset = layer->layer_top;
+#ifdef CONFIG_ENABLE_AFD
+	}
+#endif
+}
+
+static bool check_sideband_type(struct vframe_s *vf, bool *need_force_black)
+{
+	if (!vf)
+		return false;
+
+	if (debug_flag & DEBUG_FLAG_PRINT_PATH_SWITCH)
+		pr_info("vpp: sideband vf:%d, surface:%d; type: vf:%d, tvinput:%d\n",
+			vf->sidebind_type,
+			glayer_info[0].sideband_type,
+			vf->source_type,
+			tvin_source_type);
+
+	if (vf->sidebind_type != 0) {
+		if (vf->sidebind_type == glayer_info[0].sideband_type) {
+			/*dtv -> ATV, sidebind is ATV,but vfm is dtv, can not disp*/
+			if (glayer_info[0].sideband_type == 1 &&
+				tvin_source_type == TVIN_SOURCE_TYPE_VDIN &&
+				vf->source_type == VFRAME_SOURCE_TYPE_OTHERS) {
+				pr_info("can not disp now\n");
+				*need_force_black = true;
+				return false;
+			}
+			return true;
+		}
+		/*android p not use vc,so not set vd.sideband_type*/
+		if (glayer_info[0].sideband_type == 0 &&
+			tvin_source_type == TVIN_SOURCE_TYPE_VDIN) {
+			/*vf is dtv, sideband is vdin*/
+			pr_info("can not disp now\n");
+			*need_force_black = true;
+			return false;
+		}
+		return true;
+	} else {
+		return true;
+	}
 }
 
 #if defined(PTS_LOGGING)
@@ -1000,6 +1063,7 @@ static u32 toggle_same_count;
 static int hdmin_delay_start;
 static int hdmin_delay_start_time;
 static int hdmin_delay_duration;
+static int hdmin_delay_min_ms;
 static int hdmin_delay_max_ms = 128;
 static int hdmin_delay_done = true;
 static int hdmin_need_drop_count;
@@ -1009,7 +1073,8 @@ static int hdmi_vframe_count;
 static bool hdmi_delay_first_check;
 static bool hdmi_delay_normal_check;
 static u32  hdmin_delay_count_debug;
-static bool enable_hdmi_delay_normal_check;/*default is false*/
+/* 0xff: always check, n: check n times after first check */
+static bool enable_hdmi_delay_normal_check = 1;
 
 #define HDMI_DELAY_FIRST_CHECK_COUNT 60
 #define HDMI_DELAY_NORMAL_CHECK_COUNT 300
@@ -1874,8 +1939,9 @@ static void display_latency_debug(struct vframe_s *vf)
 		max_dis_hwc = delay_time;
 	}
 
-	pr_info("toogle: index=%d, pts=%lld, dis_time=%lld\n",
-		vf->omx_index, vf->pts_us64, time_info[index].display_time);
+	pr_info("toogle: index=%d, pts=%lld, dis_time=%lld, {%d, %d, %d, %d}\n",
+		vf->omx_index, vf->pts_us64, time_info[index].display_time,
+	    vf->axis[0], vf->axis[1], vf->axis[2], vf->axis[3]);
 }
 
 static void update_process_hdmi_avsync_flag(bool flag)
@@ -1925,6 +1991,12 @@ static void process_hdmi_video_sync(struct vframe_s *vf)
 	if ((!hdmi_delay_first_check && !hdmi_delay_normal_check &&
 	     hdmin_delay_start == 0) || !vf || last_required_total_delay <= 0)
 		return;
+
+	if (vf->flag & VFRAME_FLAG_GAME_MODE) {
+		if (debug_flag & DEBUG_FLAG_HDMI_AVSYNC_DEBUG)
+			pr_info("game mode, not do avsync\n");
+		return;
+	}
 
 	hdmin_delay_duration = 0;
 	while (provider_name) {
@@ -2469,6 +2541,7 @@ static inline bool vpts_expire(struct vframe_s *cur_vf,
 			       struct vframe_s *next_vf,
 			       int toggled_cnt)
 {
+	unsigned int match_ar_threshold = 5;
 	u32 pts;
 #ifdef VIDEO_PTS_CHASE
 	u32 vid_pts, scr_pts;
@@ -2477,6 +2550,11 @@ static inline bool vpts_expire(struct vframe_s *cur_vf,
 	u32 adjust_pts, org_vpts;
 	bool expired;
 	u64 pts_u64;
+	struct disp_info_s *layer = &glayer_info[0];
+	s32 dst_w, dst_h, src_w, src_h;
+	u32 min_dst_ratio, max_dst_ratio, src_ratio = 0, dst_ratio = 0;
+	bool ret = false;
+	static u32 hold_frames;
 
 	if (next_vf == NULL)
 		return false;
@@ -2493,6 +2571,51 @@ static inline bool vpts_expire(struct vframe_s *cur_vf,
 	    DEBUG_FLAG_FFPLAY)
 		return true;
 
+	if ((next_vf->flag & VFRAME_FLAG_KEEP_RATIO)) {
+		dst_w = layer->layer_width;
+		dst_h = layer->layer_height;
+
+		if (cur_vf && ((cur_vf->width != next_vf->width)
+				   || (cur_vf->height != next_vf->height))) {
+			pr_info("width=%d-%d height %d-%d\n",
+					cur_vf->width, next_vf->width,
+					cur_vf->height,
+					next_vf->height);
+
+			src_h = next_vf->height;
+			src_w = next_vf->width;
+                	if(src_w)
+				src_ratio = (src_h << 8) / src_w;
+                	if(dst_w)
+				dst_ratio = (dst_h << 8) / dst_w;
+			max_dst_ratio = src_ratio *
+				(100 + match_ar_threshold) / 100;
+			min_dst_ratio = src_ratio *
+				(100 - match_ar_threshold) / 100;
+                	if (!src_ratio || !dst_ratio) {
+				ret = true;
+			} else if (max_dst_ratio >= dst_ratio
+					&& dst_ratio >= min_dst_ratio) {
+				ret = true;
+			} else {
+				ret = false;
+pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
+				__func__, src_w, src_h, src_ratio,
+						min_dst_ratio, max_dst_ratio,
+						dst_w, dst_h, dst_ratio);
+			}
+			if (ret)
+				hold_frames = 0;
+			else
+				hold_frames++;
+			if (hold_frames >= HOLD_RATIO_TIMEOUT) {
+				ret = true;
+				pr_info("hold frames timeout: %d > %d\n",
+					hold_frames, HOLD_RATIO_TIMEOUT);
+			}
+			return ret;
+		}
+	}
 	if ((freerun_mode == FREERUN_NODUR) || hdmi_in_onvideo)
 		return true;
 	/*freerun for game mode*/
@@ -3475,6 +3598,105 @@ static void dmc_adjust_for_mali_vpu(unsigned int width,
 	}
 }
 
+#define VDIN_KEEP_COUNT 1
+#define DI_KEEP_COUNT_P 1
+#define DI_KEEP_COUNT_I 2
+
+static void hdmi_in_delay_maxmin_reset(void)
+{
+	hdmin_delay_min_ms = 0;
+	hdmin_delay_max_ms = 0;
+}
+
+static void hdmi_in_delay_maxmin_old(struct vframe_s *vf)
+{
+	u64 vdin_vsync = 0;
+	u64 vpp_vsync = 0;
+	u32 vdin_count = 0;
+	int di_keep_count = 0;
+	u64 hdmin_delay_min = 0;
+	u64 hdmin_delay_max = 0;
+	int buf_cnt;
+	struct vinfo_s *video_info;
+	u64 memc_delay = 0;
+	int vdin_keep_count = VDIN_KEEP_COUNT;
+
+	if (vf->source_type != VFRAME_SOURCE_TYPE_HDMI &&
+		vf->source_type != VFRAME_SOURCE_TYPE_CVBS &&
+		vf->source_type != VFRAME_SOURCE_TYPE_TUNER)
+		return;
+
+	if (vf->type & VIDTYPE_DI_PW) {
+		if (vf->type_original & VIDTYPE_INTERLACE)
+			di_keep_count = DI_KEEP_COUNT_I;
+		else
+			di_keep_count = DI_KEEP_COUNT_P;
+	}
+
+	video_info = get_current_vinfo();
+	if (video_info->sync_duration_num > 0) {
+		vpp_vsync = video_info->sync_duration_den;
+		vpp_vsync = vpp_vsync * 1000000;
+		vpp_vsync = div64_u64(vpp_vsync,
+			video_info->sync_duration_num);
+	}
+
+	vdin_vsync = vf->duration;
+	vdin_vsync = vdin_vsync * 1000;
+	vdin_vsync = div64_u64(vdin_vsync, 96);
+
+	/*pre: vdin keep 1, di keep 1/2(one process,one for I frame), total 2/3
+	 *rdma one vpp vsync, one for next vsync to peek
+	 *if do di: count = (1 + 1/2) * vdin_vsync + vpp_vsync * 2;
+	 *if no di: count = (1 + 0) * vdin_vsync + vpp_vsync * 2;
+	 */
+	hdmin_delay_min = (vdin_keep_count + di_keep_count) * vdin_vsync
+			+ vpp_vsync * 2;
+	hdmin_delay_min_ms = div64_u64(hdmin_delay_min, 1000);
+	hdmin_delay_min_ms += memc_delay;
+
+	/*vdin total 10 buf, one for vdin next write, one is on display, 8 left
+	 */
+	buf_cnt = video_vdin_buf_info_get();
+	if (buf_cnt <= 2)
+		return;
+	vdin_count = buf_cnt - 1 - 1;
+
+	hdmin_delay_max = vdin_count * vdin_vsync;
+	hdmin_delay_max_ms = div64_u64(hdmin_delay_max, 1000);
+	hdmin_delay_max_ms += memc_delay;
+}
+
+void set_tvin_delay_start(u32 start)
+{
+	hdmin_delay_start = start;
+}
+EXPORT_SYMBOL(set_tvin_delay_start);
+
+void set_tvin_delay_duration(u32 time)
+{
+	last_required_total_delay = time;
+}
+EXPORT_SYMBOL(set_tvin_delay_duration);
+
+u32 get_tvin_delay(void)
+{
+	return vframe_walk_delay;
+}
+EXPORT_SYMBOL(get_tvin_delay);
+
+u32 get_tvin_delay_max_ms(void)
+{
+	return hdmin_delay_max_ms;
+}
+EXPORT_SYMBOL(get_tvin_delay_max_ms);
+
+u32 get_tvin_delay_min_ms(void)
+{
+	return hdmin_delay_min_ms;
+}
+EXPORT_SYMBOL(get_tvin_delay_min_ms);
+
 /*ret = 0: no need delay*/
 /*ret = 1: need to delay*/
 static int hdmi_in_delay_check(struct vframe_s *vf)
@@ -3677,16 +3899,18 @@ static void _set_video_window(
 	int *parsed = p;
 	int last_x, last_y, last_w, last_h;
 	int new_x, new_y, new_w, new_h;
-#ifdef TV_REVERSE
-	int temp, temp1;
+
+#if (defined(TV_REVERSE) && !defined(CONFIG_ENABLE_AFD)) || (defined(TMP_DISABLE) && defined(CONFIG_ENABLE_AFD))
 	const struct vinfo_s *info = get_current_vinfo();
 #endif
 
 	if (!layer)
 		return;
 
-#ifdef TV_REVERSE
+#if (defined(TV_REVERSE) && !defined(CONFIG_ENABLE_AFD)) || (defined(TMP_DISABLE) && defined(CONFIG_ENABLE_AFD))
 	if (reverse) {
+		int temp, temp1;
+
 		temp = parsed[0];
 		temp1 = parsed[1];
 		if (get_osd_reverse() & 1) {
@@ -3763,7 +3987,7 @@ static void _set_video_window(
 		if (layer->layer_id == 0) {
 			atomic_set(&axis_changed, 1);
 			vd_layer[0].property_changed = true;
-			if (debug_flag & DEBUG_FLAG_TRACE_EVENT)
+//			if (debug_flag & DEBUG_FLAG_TRACE_EVENT)
 				pr_info("VD1 axis changed: %d %d (%d %d)->%d %d (%d %d)\n",
 					last_x, last_y, last_w, last_h,
 					new_x, new_y, new_w, new_h);
@@ -4533,6 +4757,7 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 	unsigned char frame_par_di_set = 0;
 	s32 vout_type;
 	struct vframe_s *vf;
+	struct vframe_s *vf_tmp;
 	bool show_nosync = false;
 	int toggle_cnt;
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
@@ -4564,6 +4789,7 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 	struct timeval end2;
 	struct timeval end3;
 	struct timeval end4;
+	bool need_force_black = false;
 
 	do_gettimeofday(&start);
 	enc_line_start = get_cur_enc_line();
@@ -4871,11 +5097,16 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 #endif
 	vf = video_vf_peek();
 
-	if (vf) {
+	if (!vf)
+		vf_tmp = cur_dispbuf;
+	else
+		vf_tmp = vf;
+
+	if (vf_tmp) {
 		if (glayer_info[0].display_path_id == VFM_PATH_AUTO) {
-			if ((vf->sidebind_type
+			if ((vf_tmp->sidebind_type
 				== glayer_info[0].sideband_type)
-				|| (vf->sidebind_type == 0)) {
+				|| (vf_tmp->sidebind_type == 0)) {
 				pr_info("VID: path_id %d -> %d\n",
 					glayer_info[0].display_path_id,
 					VFM_PATH_AMVIDEO);
@@ -4884,8 +5115,17 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 				vd1_path_id = glayer_info[0].display_path_id;
 			} else if (glayer_info[0].sideband_type != -1)
 				pr_info("vf->sideband_type =%d,layertype=%d\n",
-					vf->sidebind_type,
+					vf_tmp->sidebind_type,
 					glayer_info[0].sideband_type);
+		}
+
+		/*old vfm path not use vc, path_id is -1 */
+		if (glayer_info[0].display_path_id == VFM_PATH_DEF) {
+			if (!check_sideband_type(vf_tmp, &need_force_black)) {
+				pr_info("VID: 2:path_id %d -> %d\n",
+					glayer_info[0].display_path_id,
+					VFM_PATH_DEF);
+			}
 		}
 	}
 
@@ -4901,21 +5141,11 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 	toggle_cnt = 0;
 	vsync_count++;
 	timer_count++;
-	if (display_frame_count == 0 && vf &&
+	if (display_frame_count < 3 && vf &&
 	    (vf->source_type == VFRAME_SOURCE_TYPE_HDMI ||
-	    vf->source_type == VFRAME_SOURCE_TYPE_CVBS)) {
-		int buf_cnt = video_vdin_buf_info_get();
-		if (buf_cnt > 2) {
-			struct vinfo_s *video_info;
-
-			video_info = get_current_vinfo();
-			if (video_info->sync_duration_num > 0)
-				hdmin_delay_max_ms = 1000 *
-				video_info->sync_duration_den /
-				video_info->sync_duration_num
-				* (buf_cnt - 2);
-		}
-	}
+	    vf->source_type == VFRAME_SOURCE_TYPE_CVBS ||
+	    vf->source_type == VFRAME_SOURCE_TYPE_TUNER))
+		hdmi_in_delay_maxmin_old(vf);
 
 #if defined(CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_VECM)
 	if (cur_frame_par) {/*need call every vsync*/
@@ -5260,6 +5490,7 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 		if (hdmin_delay_start > 0) {
 			process_hdmi_video_sync(vf);
 			hdmin_delay_start = 0;
+			hdmi_vframe_count = 0;
 		}
 		/*step 2: recheck video sync after hdmi-in start*/
 		if (hdmi_delay_first_check) {
@@ -5321,8 +5552,9 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 				vf->pts, vf->omx_index,
 				timestamp_pcrscr_get(), timestamp_vpts_get());
 		}
-		if ((omx_continuous_drop_flag && omx_run)
-			&& !(debug_flag
+		if ((omx_continuous_drop_flag && omx_run
+				&& !(vf->flag & VFRAME_FLAG_KEEP_RATIO))
+				&& !(debug_flag
 				& DEBUG_FLAG_OMX_DISABLE_DROP_FRAME)) {
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
 			if (is_dolby_vision_enable() && vf &&
@@ -6396,6 +6628,38 @@ SET_FILTER:
 	frame_par_di_set = primary_render_frame(&vd_layer[0]);
 	pip_render_frame(&vd_layer[1]);
 
+	if (vd_layer[0].dispbuf && need_force_black) {
+		if ((vd_layer[0].force_black &&
+			!(debug_flag & DEBUG_FLAG_NO_CLIP_SETTING)) ||
+			!vd_layer[0].force_black) {
+			if (vd_layer[0].dispbuf->type & VIDTYPE_RGB_444) {
+				/* RGB */
+				vd_layer[0].clip_setting.clip_max =
+					(0x0 << 20) | (0x0 << 10) | 0;
+				vd_layer[0].clip_setting.clip_min =
+					vd_layer[0].clip_setting.clip_max;
+			} else {
+				/* YUV */
+				vd_layer[0].clip_setting.clip_max =
+					(0x0 << 20) | (0x200 << 10) | 0x200;
+				vd_layer[0].clip_setting.clip_min =
+					vd_layer[0].clip_setting.clip_max;
+			}
+			vd_layer[0].clip_setting.clip_done = false;
+		}
+		if (!vd_layer[0].force_black) {
+			pr_info("vsync: vd1 force black\n");
+			vd_layer[0].force_black = true;
+		}
+	} else if (vd_layer[0].force_black) {
+		pr_info("vsync: vd1 black to normal\n");
+		vd_layer[0].clip_setting.clip_max =
+			(0x3ff << 20) | (0x3ff << 10) | 0x3ff;
+		vd_layer[0].clip_setting.clip_min = 0;
+		vd_layer[0].clip_setting.clip_done = false;
+		vd_layer[0].force_black = false;
+	}
+
 	if (vd_layer[0].dispbuf &&
 	    (vd_layer[0].dispbuf->flag & VFRAME_FLAG_FAKE_FRAME))
 		safe_switch_videolayer(0, false, true);
@@ -6491,6 +6755,14 @@ exit:
 #if defined(PTS_LOGGING) || defined(PTS_TRACE_DEBUG)
 	pts_trace++;
 #endif
+
+	if (vd1_vd2_mux) {
+		vd_clip_setting(1, &vd_layer[0].clip_setting);
+	} else {
+		vd_clip_setting(0, &vd_layer[0].clip_setting);
+		vd_clip_setting(1, &vd_layer[1].clip_setting);
+	}
+
 	vpp_blend_update(vinfo);
 
 	if (gvideo_recv[0])
@@ -6947,6 +7219,9 @@ static void video_vf_light_unreg_provider(int need_keep_frame)
 static int  get_display_info(void *data)
 {
 	s32 w, h, x, y;
+#ifdef CONFIG_ENABLE_AFD
+	s32 x_end, y_end;
+#endif
 	struct vdisplay_info_s  *info_para = (struct vdisplay_info_s *)data;
 	const struct vinfo_s *info = get_current_vinfo();
 	struct disp_info_s *layer = &glayer_info[0];
@@ -6958,6 +7233,17 @@ static int  get_display_info(void *data)
 	y = layer->layer_top;
 	w = layer->layer_width;
 	h = layer->layer_height;
+
+#ifdef CONFIG_ENABLE_AFD
+	/* TODO: mirror case */
+	if (layer->reverse) {
+		/* reverse x/y start */
+		x_end = x + w - 1;
+		x = info->width - x_end - 1;
+		y_end = y + h - 1;
+		y = info->height - y_end - 1;
+	}
+#endif
 
 	if ((w == 0) || (w  > info->width))
 		w =  info->width;
@@ -7056,6 +7342,7 @@ static int video_receiver_event_fun(int type, void *data, void *private_data)
 		dovi_drop_frame_num = 0;
 		video_inuse = 0;
 		mutex_unlock(&omx_mutex);
+		hdmi_in_delay_maxmin_reset();
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
 		if (is_dolby_vision_enable()) {
 			dv_vf_light_unreg_provider();
@@ -7860,6 +8147,7 @@ static void set_omx_pts(u32 *p)
 			time_setomxpts_last = time_setomxpts;
 			time_setomxpts = sched_clock();
 			omx_pts = tmp_pts;
+			set_omx_index = frame_num;
 			ATRACE_COUNTER("omxpts", omx_pts);
 		}
 	}
@@ -8638,6 +8926,8 @@ static long amvideo_ioctl(struct file *file, unsigned int cmd, ulong arg)
 					cur_dispbuf->height;
 			/* -1: invalid, 0: progressive, 1: interlace */
 			info.prog_mode = (cur_dispbuf->type_original & 0x1);
+			info.reserved = (cur_dispbuf->flag
+					& VFRAME_FLAG_KEEP_RATIO);
 		}
 
 		spin_unlock_irqrestore(&lock, flags);
@@ -9080,6 +9370,8 @@ static ssize_t video_state_show(struct class *cla,
 		    cur_frame_par->VPP_vsc_endp);
 #ifdef CONFIG_ENABLE_AFD
 	if (layer_info) {
+		len += sprintf(buf + len, "reverse: %s\n",
+			layer_info->reverse ? "true" : "false");
 		if (layer_info->afd_enable) {
 			len += sprintf(buf + len, "afd: enable\n");
 			len += sprintf(buf + len, "afd_pos: %d %d %d %d\n",
@@ -10118,6 +10410,30 @@ static ssize_t hdmin_delay_start_store(struct class *class,
 
 	return count;
 }
+
+static ssize_t hdmin_delay_min_ms_show(struct class *class,
+				      struct class_attribute *attr,
+				      char *buf)
+{
+	return sprintf(buf, "%d\n", hdmin_delay_min_ms);
+}
+
+static ssize_t hdmin_delay_min_ms_store(struct class *class,
+				       struct class_attribute *attr,
+				       const char *buf,
+				       size_t count)
+{
+	int r;
+	int value;
+
+	r = kstrtoint(buf, 0, &value);
+	if (r < 0)
+		return -EINVAL;
+	hdmin_delay_min_ms = value;
+	pr_info("[%s] hdmin_delay_min_ms:%d\n", __func__, value);
+	return count;
+}
+
 static ssize_t hdmin_delay_max_ms_show(struct class *class,
 			struct class_attribute *attr, char *buf)
 {
@@ -11656,6 +11972,8 @@ static ssize_t videopip_state_show(
 		curpip_frame_par->VPP_vsc_endp);
 #ifdef CONFIG_ENABLE_AFD
 	if (layer_info) {
+		len += sprintf(buf + len, "reverse: %s\n",
+			layer_info->reverse ? "true" : "false");
 		if (layer_info->afd_enable) {
 			len += sprintf(buf + len, "afd: enable\n");
 			len += sprintf(buf + len, "afd_pos: %d %d %d %d\n",
@@ -12331,6 +12649,29 @@ static ssize_t vd1_vd2_mux_store(struct class *cla,
 	return count;
 }
 
+static ssize_t tvin_source_type_show(struct class *cla,
+			     struct class_attribute *attr, char *buf)
+{
+	return snprintf(buf, 80, "tvin_source_type:%d\n", tvin_source_type);
+}
+
+static ssize_t tvin_source_type_store(struct class *cla,
+			      struct class_attribute *attr,
+			      const char *buf, size_t count)
+{
+	long tmp;
+
+	int ret = kstrtol(buf, 0, &tmp);
+
+	if (ret != 0) {
+		pr_info("ERROR converting %s to long int!\n", buf);
+		return ret;
+	}
+	tvin_source_type = tmp;
+	pr_info("store tvin_source_type=%d\n", tvin_source_type);
+	return count;
+}
+
 static struct class_attribute amvideo_class_attrs[] = {
 	__ATTR(axis,
 	       0664,
@@ -12477,6 +12818,10 @@ static struct class_attribute amvideo_class_attrs[] = {
 	       0664,
 	       hdmin_delay_duration_show,
 	       hdmin_delay_duration_store),
+	__ATTR(hdmin_delay_min_ms,
+	       0664,
+	       hdmin_delay_min_ms_show,
+	       hdmin_delay_min_ms_store),
 	__ATTR(hdmin_delay_max_ms,
 	       0664,
 	       hdmin_delay_max_ms_show,
@@ -12669,6 +13014,10 @@ static struct class_attribute amvideo_class_attrs[] = {
 	       0664,
 	       vd1_vd2_mux_show,
 	       vd1_vd2_mux_store),
+	__ATTR(tvin_source_type,
+		0664,
+		tvin_source_type_show,
+		tvin_source_type_store),
 	__ATTR_NULL
 };
 

@@ -35,7 +35,8 @@ static struct remote_reg_map regs_default_nec[] = {
 	{ REG_REG0,         7 << 28 | (0xFA0 << 12) | 0x13},
 	{ REG_STATUS,       (134 << 20) | (90 << 10)},
 	{ REG_REG1,         0x9f00},
-	{ REG_REG2,         0x00},
+	{ REG_REG2,         0x3800},
+	{ REG_REG3,         0x37f},
 	{ REG_DURATN2,      0x00},
 	{ REG_DURATN3,      0x00}
 };

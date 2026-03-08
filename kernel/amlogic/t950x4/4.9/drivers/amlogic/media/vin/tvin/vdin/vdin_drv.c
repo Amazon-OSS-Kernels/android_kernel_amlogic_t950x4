@@ -618,7 +618,8 @@ void vdin_start_dec(struct vdin_dev_s *devp)
 		if (cpu_after_eq(MESON_CPU_MAJOR_ID_GXTVBB))
 			vdin_check_hdmi_hdr(devp);
 
-		vdin_update_prop(devp);
+		/* signal maybe change after stabled so not need update here */
+		//vdin_update_prop(devp);
 		pr_info("%s dv:%d hdr:%d allm:0x%x fps:%d sg_type:0x%x ratio:%d\n",
 			__func__,
 			devp->dv.dv_flag, devp->prop.vdin_hdr_flag,
@@ -937,7 +938,6 @@ void vdin_stop_dec(struct vdin_dev_s *devp)
 #endif
 	switch_vpu_mem_pd_vmod(devp->addr_offset?VPU_VIU_VDIN1:VPU_VIU_VDIN0,
 			VPU_MEM_POWER_DOWN);
-	memset(&devp->prop, 0, sizeof(struct tvin_sig_property_s));
 #ifdef CONFIG_AMLOGIC_MEDIA_RDMA
 	rdma_clear(devp->rdma_handle);
 #endif
@@ -952,8 +952,11 @@ void vdin_stop_dec(struct vdin_dev_s *devp)
 	devp->unreliable_vs_cnt_pre = 0;
 	devp->unreliable_vs_idx = 0;
 	devp->prop.hdcp_sts = 0;
+	devp->starting_chg = 0;
+	devp->vdin_stable_cnt = 0;
 
-	 /* clear color para*/
+	/* clear color para*/
+	memset(&devp->pre_prop, 0, sizeof(devp->pre_prop));
 	memset(&devp->prop, 0, sizeof(devp->prop));
 	if (time_en)
 		pr_info("vdin.%d stop time %ums,run time:%ums.\n",
@@ -1812,6 +1815,13 @@ irqreturn_t vdin_isr(int irq, void *dev_id)
 	vdin_set_mif_onoff(devp, devp->flags & VDIN_FLAG_RDMA_ENABLE);
 	isr_log(devp->vfp);
 	devp->irq_cnt++;
+
+	/* 10 is prevent abnormal frame */
+	if (devp->starting_chg && devp->irq_cnt < 10) {
+		vdin_drop_frame_info(devp, "starting chg");
+		return IRQ_HANDLED;
+	}
+
 	/* debug interrupt interval time
 	 *
 	 * this code about system time must be outside of spinlock.
@@ -2746,6 +2756,11 @@ static long vdin_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	devp = file->private_data;
 	if (!devp)
 		return -EFAULT;
+
+	if (vdin_dbg_en & VDIN_DBG_CNTL_IOCTL)
+		pr_err("vdin%d cmd:0x%x come in OPEN:0x%x\n",
+			devp->index, cmd, TVIN_IOC_OPEN);
+
 	switch (cmd) {
 	case TVIN_IOC_OPEN: {
 		struct tvin_parm_s parm = {0};
@@ -3005,21 +3020,23 @@ static long vdin_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			ret = -EFAULT;
 
 		if (vdin_dbg_en)
-			pr_info("%s TVIN_IOC_G_SIG_INFO signal_type: 0x%x\n",
-				__func__, info.signal_type);
+			pr_info("%s TVIN_IOC_G_SIG_INFO signal_type:0x%x status:0x%x\n",
+				__func__, info.signal_type, info.status);
 		mutex_unlock(&devp->fe_lock);
 		break;
 	}
 	case TVIN_IOC_G_FRONTEND_INFO: {
 		struct tvin_frontend_info_s info;
 
-		if ((!devp->fmt_info_p) || (!devp->curr_wr_vfe)) {
+		mutex_lock(&devp->fe_lock);
+		if ((!devp->fmt_info_p) || (!devp->curr_wr_vfe) ||
+		    !(devp->flags & VDIN_FLAG_DEC_STARTED)) {
 			ret = -EFAULT;
+			mutex_unlock(&devp->fe_lock);
 			break;
 		}
 
 		memset(&info, 0, sizeof(struct tvin_frontend_info_s));
-		mutex_lock(&devp->fe_lock);
 		info.cfmt = devp->parm.info.cfmt;
 		info.fps = devp->parm.info.fps;
 		info.colordepth = devp->prop.colordepth;
@@ -3030,6 +3047,8 @@ static long vdin_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			sizeof(struct tvin_frontend_info_s)))
 			ret = -EFAULT;
 		mutex_unlock(&devp->fe_lock);
+		if (vdin_dbg_en)
+			pr_info("TVIN_IOC_G_FRONTEND_INFO(%d)\n", devp->index);
 		break;
 	}
 	case TVIN_IOC_G_BUF_INFO: {
@@ -3051,6 +3070,12 @@ static long vdin_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case TVIN_IOC_GET_BUF: {
 		struct tvin_video_buf_s tvbuf;
 		struct vf_entry *vfe;
+
+		if (!devp->vfp->wr_next) {
+			pr_info("not TVIN_IOC_START_GET_BUF wr_next is null\n");
+			ret = -EFAULT;
+			break;
+		}
 		memset(&tvbuf, 0, sizeof(tvbuf));
 		vfe = list_entry(devp->vfp->wr_next, struct vf_entry, list);
 		devp->vfp->wr_next = devp->vfp->wr_next->next;
@@ -3311,7 +3336,7 @@ static long vdin_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case TVIN_IOC_S_CANVAS_ADDR:
-		if (devp->index == 0) {
+		if (devp->index == 0 || !devp->set_canvas_manual) {
 			pr_info("TVIN_IOC_S_CANVAS_ADDR can't be used at vdin0\n");
 			break;
 		}
@@ -4200,8 +4225,14 @@ static int vdin_drv_probe(struct platform_device *pdev)
 
 	ret = of_property_read_u32(pdev->dev.of_node, "frame_buff_num",
 				   &vdevp->frame_buff_num);
-	if (ret)
-		vdevp->frame_buff_num = 0;
+	if (ret) {
+		if (!vdevp->index)
+			/* dts not config vdin0 default 6 buffers */
+			vdevp->frame_buff_num = 6;
+		else
+			/* dts not config vdin1 default 4 buffers */
+			vdevp->frame_buff_num = 4;
+	}
 
 	/* init vdin parameters */
 	vdevp->flags = VDIN_FLAG_NULL;

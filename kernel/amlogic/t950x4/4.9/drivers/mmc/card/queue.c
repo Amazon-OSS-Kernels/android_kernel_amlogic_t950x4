@@ -185,7 +185,24 @@ static void mmc_queue_setup_discard(struct request_queue *q,
 	blk_queue_max_discard_sectors(q, max_discard);
 	if (card->erased_byte == 0 && !mmc_can_discard(card))
 		q->limits.discard_zeroes_data = 1;
-	q->limits.discard_granularity = card->pref_erase << 9;
+
+	/*
+	 * Some eMMC could report HC_ERASE_GRP_SIZE with a high value (e.g. 4M),
+	 * but it doesn't choose it via ERASE_GROUP_DEF, this cause mismatch
+	 * between driver and EXT_CSD of eMMC, driver set wrong pref_erase to
+	 * discard_granularity. Check erase_group_def=0x1 if pref_erase is more
+	 * than erase_size and choose pref_erase, otherwise choose erase_size.
+	 */
+	if (card->pref_erase > card->erase_size
+		&& !(card->ext_csd.erase_group_def & 0x1)) {
+		q->limits.discard_granularity = card->erase_size << 9;
+		pr_info("%s: pref_erase:%d erase_size:%d erase_group_def: %d\n",
+			__func__, card->pref_erase, card->erase_size,
+			card->ext_csd.erase_group_def);
+	} else {
+		q->limits.discard_granularity = card->pref_erase << 9;
+	}
+
 	/* granularity must not be greater than max. discard */
 	if (card->pref_erase > max_discard)
 		q->limits.discard_granularity = 0;

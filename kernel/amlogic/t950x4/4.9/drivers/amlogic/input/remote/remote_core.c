@@ -101,8 +101,7 @@ static void ir_do_keydown(struct remote_dev *dev, int scancode,
 	remote_dbg(dev->dev, "keypressed=0x%x\n", dev->keypressed);
 
 	if (dev->keypressed)
-		ir_do_keyup(dev);
-
+		return;
 	if (keycode != KEY_RESERVED) {
 		dev->keypressed = true;
 		dev->last_scancode = scancode;

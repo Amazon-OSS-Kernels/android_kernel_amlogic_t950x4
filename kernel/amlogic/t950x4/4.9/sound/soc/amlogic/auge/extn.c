@@ -48,6 +48,9 @@
 #ifdef CONFIG_AMLOGIC_MEDIA_TVIN_HDMI
 #include <linux/amlogic/media/frame_provider/tvin/tvin.h>
 #endif
+#ifdef CONFIG_AMLOGIC_MEDIA_VIDEO
+#include <linux/amlogic/media/video_sink/video.h>
+#endif
 
 #define DRV_NAME "EXTN"
 #define MAX_INT    0x7ffffff
@@ -820,6 +823,7 @@ static const struct sppdif_audio_info type_texts[] = {
 	{3, 0x0c, "DTS-II"},
 	{3, 0x0d, "DTS-III"},
 	{4, 0x11, "DTS-IV"},
+	{4, 0, "DTS-HD"},
 	{5, 0x16, "TRUEHD"},
 	{6, 0x103, "PAUSE"},
 	{6, 0x003, "PAUSE"},
@@ -834,7 +838,7 @@ static int hdmiin_check_audio_type(struct extn *p_extn)
 {
 	int total_num = sizeof(type_texts)/sizeof(struct sppdif_audio_info);
 	int pc = frhdmirx_get_chan_status_pc(p_extn->hdmirx_mode);
-	int audio_type = 0;
+	int audio_type = -1;
 	int i;
 
 	if (!p_extn->nonpcm_flag && p_extn->hdmirx_mode)
@@ -1016,6 +1020,54 @@ int aml_get_hdmiin_audio_bitwidth(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+#ifdef CONFIG_AMLOGIC_MEDIA_VIDEO
+static int get_tvin_video_delay_enum(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.enumerated.item[0] = get_tvin_delay();
+
+	return 0;
+}
+
+static int set_tvin_video_delay_enum(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol)
+{
+	unsigned int value = 0;
+	unsigned int max_delay = get_tvin_delay_max_ms();
+	unsigned int min_delay = get_tvin_delay_min_ms();
+
+	value = ucontrol->value.integer.value[0];
+	if (!max_delay || !min_delay)
+		return 0;
+
+	if (value > max_delay)
+		value = max_delay;
+	else if (value < min_delay)
+		value = min_delay;
+
+	set_tvin_delay_duration(value);
+	set_tvin_delay_start(1);
+
+	pr_info("%s, set tvin video delay [%dms], range: (%d~%dms)\n",
+			__func__, value, min_delay, max_delay);
+
+	return 0;
+}
+
+static int get_tvin_video_max_delay_enum(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.enumerated.item[0] = get_tvin_delay_max_ms();
+	return 0;
+}
+
+static int get_tvin_video_min_delay_enum(struct snd_kcontrol *kcontrol,
+		struct snd_ctl_elem_value *ucontrol)
+{
+	ucontrol->value.enumerated.item[0] = get_tvin_delay_min_ms();
+	return 0;
+}
+#endif
 static const struct snd_kcontrol_new extn_controls[] = {
 
 	/* In */
@@ -1084,7 +1136,20 @@ static const struct snd_kcontrol_new extn_controls[] = {
 		aml_get_audio_edid,
 		aml_set_audio_edid),
 #endif
-
+#ifdef CONFIG_AMLOGIC_MEDIA_VIDEO
+	SOC_SINGLE_EXT("TVIN VIDEO DELAY",
+		0, 0, 400, 0,
+		get_tvin_video_delay_enum,
+		set_tvin_video_delay_enum),
+	SOC_SINGLE_EXT("TVIN VIDEO MIN DELAY",
+		0, 0, 0, 0,
+		get_tvin_video_min_delay_enum,
+		NULL),
+	SOC_SINGLE_EXT("TVIN VIDEO MAX DELAY",
+		0, 0, 0, 0,
+		get_tvin_video_max_delay_enum,
+		NULL),
+#endif
 };
 
 static const struct snd_soc_component_driver extn_component = {

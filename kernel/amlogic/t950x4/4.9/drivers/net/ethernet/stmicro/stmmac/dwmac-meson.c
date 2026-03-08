@@ -26,6 +26,7 @@
 #include "dwmac_dma.h"
 #include <linux/amlogic/cpu_version.h>
 #include <linux/arm-smccc.h>
+#include <linux/amlogic/scpi_protocol.h>
 #endif
 #include "stmmac_platform.h"
 #include <linux/amlogic/cpu_version.h>
@@ -125,7 +126,7 @@ static void meson6_dwmac_fix_mac_speed(void *priv, unsigned int speed)
 /*these two store the define of wol in dts*/
 extern unsigned int support_internal_phy_wol;
 extern unsigned int support_external_phy_wol;
-static unsigned int support_mac_wol;
+unsigned int support_mac_wol;
 static void __iomem *network_interface_setup(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
@@ -332,6 +333,22 @@ static int dwmac_meson_cfg_analog(void __iomem *base_addr,
 static inline bool is_meson_t5_cpu(void)
 {
 	return get_cpu_type() == MESON_CPU_MAJOR_ID_T5;
+}
+
+void set_wol_notify_bl31(void)
+{
+	struct arm_smccc_res res;
+
+	arm_smccc_smc(0x8200009D, support_mac_wol, 0, 0, 0, 0, 0, 0, &res);
+}
+
+struct platform_device *pdev_L;
+void set_wol_flag(unsigned int flag)
+{
+	if (flag == support_mac_wol)
+		return;
+	device_init_wakeup(&pdev_L->dev, flag);
+	support_mac_wol = flag;
 }
 
 unsigned int tx_amp_bl2;
@@ -567,28 +584,18 @@ static int meson6_dwmac_suspend(struct device *dev)
 static int meson6_dwmac_resume(struct device *dev)
 {
 	int ret;
-	struct pinctrl *pin_ctrl;
-	struct pinctrl_state *turnon_tes = NULL;
-	pr_info("resuem inter = %d\n", is_internal_phy);
-	if ((ee_reset_base) && (support_mac_wol == 0))
+//	struct pinctrl *pin_ctrl;
+//	struct pinctrl_state *turnon_tes = NULL;
+	struct net_device *ndev = dev_get_drvdata(dev);
+	struct stmmac_priv *priv = netdev_priv(ndev);
+
+	pr_info("resuem inter = %d pmt %x\n", is_internal_phy, readl(priv->ioaddr + 0x2c));
+//	if ((ee_reset_base) && (support_mac_wol == 0))
+	if (ee_reset_base)
 		writel((1 << 11), (void __iomem	*)
 			(unsigned long)ee_reset_base);
 
-	if ((is_internal_phy) && (support_mac_wol == 0)) {
-		if ((ee_reset_base) && (support_mac_wol == 0))
-			writel((1 << 11), (void __iomem	*)
-				(unsigned long)ee_reset_base);
-
-		pin_ctrl = devm_pinctrl_get(dev);
-		if (IS_ERR_OR_NULL(pin_ctrl)) {
-			pr_info("pinctrl is null\n");
-		} else {
-			turnon_tes = pinctrl_lookup_state
-					(pin_ctrl, "internal_eth_pins");
-			pinctrl_select_state(pin_ctrl, turnon_tes);
-			devm_pinctrl_put(pin_ctrl);
-			pin_ctrl = NULL;
-		}
+	if (is_internal_phy) {
 		if (!ee_reset_base) {
 			dwmac_meson_recover_analog(dev);
 		} else {
@@ -603,6 +610,10 @@ static int meson6_dwmac_resume(struct device *dev)
 	}
 
 	ret = stmmac_pltfr_resume(dev);
+	if ((is_internal_phy) && (support_mac_wol == 1)) {
+		pr_info("eth hold wakelock 5s\n");
+		pm_wakeup_event(dev, 5000);
+	}
 	return ret;
 }
 EXPORT_SYMBOL_GPL(meson6_dwmac_resume);
@@ -647,14 +658,6 @@ void meson6_dwmac_shutdown(struct platform_device *pdev)
 }
 
 #endif
-
-void set_wol_notify_bl31(void)
-{
-	struct arm_smccc_res res;
-
-	arm_smccc_smc(0x8200009D, 0,
-					0, 0, 0, 0, 0, 0, &res);
-}
 
 static int meson6_dwmac_probe(struct platform_device *pdev)
 {
@@ -706,10 +709,12 @@ static int meson6_dwmac_probe(struct platform_device *pdev)
 	ret = stmmac_dvr_probe(&pdev->dev, plat_dat, &stmmac_res);
 	if (ret)
 		goto err_remove_config_dt;
-	if (support_mac_wol) {
-		set_wol_notify_bl31();
-		device_init_wakeup(&pdev->dev, 1);
-	}
+
+	pdev_L = pdev;
+	//set_wol_flag(support_mac_wol);
+	//set_wol_notify_bl31();
+	device_init_wakeup(&pdev_L->dev, support_mac_wol);
+
 	return 0;
 
 err_remove_config_dt:

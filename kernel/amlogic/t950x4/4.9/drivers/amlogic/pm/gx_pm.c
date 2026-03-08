@@ -42,6 +42,7 @@
 #include <linux/kobject.h>
 #include <../kernel/power/power.h>
 #include <linux/amlogic/scpi_protocol.h>
+#include <linux/amlogic/reboot.h>
 #include "vad_power.h"
 
 typedef unsigned long (psci_fn)(unsigned long, unsigned long,
@@ -70,6 +71,7 @@ static void __iomem *debug_reg;
 static void __iomem *exit_reg;
 static int max_idle_lvl;
 static suspend_state_t pm_state;
+static bool resume_from_suspend;
 
 
 /*
@@ -114,8 +116,7 @@ unsigned int get_resume_method(void)
 {
 	unsigned int val = 0;
 
-	if (exit_reg)
-		val = (readl(exit_reg) >> 28) & 0xf;
+	val = (readl(exit_reg) >> 28) & 0xf;
 	return val;
 }
 EXPORT_SYMBOL(get_resume_method);
@@ -161,6 +162,11 @@ ssize_t suspend_reason_show(struct device *dev, struct device_attribute *attr,
 
 	if (scpi_get_wakeup_reason(&suspend_reason))
 		return -EPERM;
+
+	/* Clear suspend reason if reboot command except shutdown is executed */
+	if (!resume_from_suspend && (get_reboot_reason() != MESON_SHUTDOWN_REBOOT))
+		suspend_reason = 0;
+
 	len = sprintf(buf, "%d\n", suspend_reason);
 
 	return len;
@@ -299,6 +305,7 @@ int pm_suspend_noirq(struct device *dev)
 
 int pm_resume_noirq(struct device *dev)
 {
+	resume_from_suspend = true;
 	vad_wakeup_power_resume(dev);
 	return 0;
 }

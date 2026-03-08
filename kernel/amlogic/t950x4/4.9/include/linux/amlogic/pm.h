@@ -21,7 +21,7 @@
 
 /* wake up reason*/
 #define	UDEFINED_WAKEUP	0
-#define	CHARGING_WAKEUP	1
+#define	REMOTE_CUSTOM5_WAKEUP      1
 #define	REMOTE_WAKEUP		2
 #define	RTC_WAKEUP			3
 #define	BT_WAKEUP			4
@@ -31,7 +31,7 @@
 #define	CEC_WAKEUP			8
 #define	REMOTE_CUS_WAKEUP		9
 #define ETH_PHY_WAKEUP      10
-
+#define REMOTE_CUSTOM6_WAKEUP		11
 #define REMOTE_CUSTOM1_WAKEUP	13
 #define REMOTE_CUSTOM2_WAKEUP	14
 #define REMOTE_CUSTOM3_WAKEUP	15
@@ -44,6 +44,7 @@ AUTO_WAKEUP is unused, also be used to Custom remote wake up
 
 extern unsigned int get_resume_method(void);
 extern unsigned int is_pm_freeze_mode(void);
+extern int get_reboot_reason(void);
 #ifdef CONFIG_AMLOGIC_ADC_KEYPADS
 bool meson_adc_is_alive_freeze(void);
 #endif

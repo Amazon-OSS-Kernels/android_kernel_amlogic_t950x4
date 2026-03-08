@@ -2648,7 +2648,7 @@ enum hdr_process_sel hdr_func(
 	} else if (hdr_process_select & HDR_SDR ||
 		hdr_process_select & HDR10P_SDR) {
 		hdr_mtx_param.mtx_only = HDR_ONLY;
-		hdr_mtx_param.mtx_gamut_mode = 1;
+		hdr_mtx_param.mtx_gamut_mode = 2;
 
 		if (gmt_mtx) {
 			for (i = 0; i < 3; i++)
@@ -3396,7 +3396,7 @@ void mtx_init(enum vpp_matrix_e mtx_sel, enum mtx_csc_e mtx_csc, int mtx_on)
 		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_COEF02_10, 0x00000000);
 		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_COEF11_12, 0x03830000);
 		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_COEF20_21, 0x00000000);
-		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_COEF22, 0x03830000);
+		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_COEF22, 0x00000383);
 		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_OFFSET0_1, 0x0400200);
 		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_OFFSET2, 0x00000200);
 		VSYNC_WRITE_VPP_REG(VPP_POST2_MATRIX_PRE_OFFSET0_1, 0x00000600);

@@ -714,7 +714,7 @@ static int ddr_pmu_remove(struct platform_device *pdev)
 #ifdef CONFIG_OF
 static const struct of_device_id aml_ddr_pmu_dt_match[] = {
 	{
-		.compatible = "amlogic, ddr-pmu",
+		.compatible = "amlogic,ddr-pmu",
 	},
 	{}
 };
@@ -722,7 +722,7 @@ static const struct of_device_id aml_ddr_pmu_dt_match[] = {
 
 static struct platform_driver ddr_pmu_driver = {
 	.driver = {
-		.name = "amlogic, ddr-pmu",
+		.name = "amlogic-ddr-pmu",
 		.owner = THIS_MODULE,
 	#ifdef CONFIG_OF
 		.of_match_table = aml_ddr_pmu_dt_match,

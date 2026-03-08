@@ -135,6 +135,20 @@ static struct notifier_block panic_notifier = {
 	.notifier_call	= panic_notify,
 };
 
+int get_reboot_reason(void)
+{
+	unsigned int value;
+
+	if (!reboot_reason_vaddr)
+		return -1;
+
+	value = readl(reboot_reason_vaddr);
+	value = (value >> 12) & 0xf;
+
+	return value;
+}
+EXPORT_SYMBOL(get_reboot_reason);
+
 ssize_t reboot_reason_show(struct device *dev,
 			   struct device_attribute *attr, char *buf)
 {

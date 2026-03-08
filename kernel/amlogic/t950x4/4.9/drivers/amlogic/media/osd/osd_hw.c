@@ -2245,7 +2245,7 @@ void osd_hw_reset(void)
 	osd_hw.hw_reset_flag = reset_bit;
 	if (reset_bit == HW_RESET_NONE)
 		return;
-	spin_lock_irqsave(&osd_lock, lock_flags);
+	//spin_lock_irqsave(&osd_lock, lock_flags);
 	if ((reset_bit & HW_RESET_OSD1_REGS)
 		&& !(backup_mask & HW_RESET_OSD1_REGS))
 		reset_bit &= ~HW_RESET_OSD1_REGS;
@@ -2321,7 +2321,7 @@ void osd_hw_reset(void)
 		}
 	} else
 		osd_rdma_reset_and_flush(reset_bit);
-	spin_unlock_irqrestore(&osd_lock, lock_flags);
+	//spin_unlock_irqrestore(&osd_lock, lock_flags);
 	/* maybe change reset bit */
 	osd_hw.hw_reset_flag = reset_bit;
 }

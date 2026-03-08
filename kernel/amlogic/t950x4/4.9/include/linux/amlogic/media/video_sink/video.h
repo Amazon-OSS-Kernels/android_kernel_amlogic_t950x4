@@ -298,7 +298,9 @@ extern void videosync_pcrscr_update(s32 inc, u32 base);
 extern void videosync_pcrscr_inc(s32 inc);
 void vsync_notify_videosync(void);
 bool get_video_reverse(void);
+#ifndef CONFIG_ENABLE_AFD
 int get_osd_reverse(void);
+#endif
 void vsync_notify_video_composer(void);
 int _video_set_disable(u32 val);
 int _videopip_set_disable(u32 val);
@@ -310,5 +312,10 @@ void set_video_zorder_ext(int layer_index, int zorder);
 s32 set_video_path_select(const char *recv_name, u8 layer_id);
 s32 set_sideband_type(s32 type, u8 layer_id);
 void vpp_probe_en_set(u32 enable);
+void set_tvin_delay_start(u32 start);
+void set_tvin_delay_duration(u32 time);
+u32 get_tvin_delay(void);
+u32 get_tvin_delay_max_ms(void);
+u32 get_tvin_delay_min_ms(void);
 void get_video_axis_offset(s32 *x_offset, s32 *y_offset);
 #endif /* VIDEO_H */

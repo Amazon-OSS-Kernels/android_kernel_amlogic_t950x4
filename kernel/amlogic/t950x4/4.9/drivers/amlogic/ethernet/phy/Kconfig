@@ -17,3 +17,9 @@ config WOL_POWER
 	help
 		if enable WOL_POWER config, will create /proc/wol_enable node.
 		use the node to control wol power pin
+
+config ENABLE_WOL_THR_UI
+	bool "Enable or disable wol by ui control"
+	default n
+	help
+		if enable WOL_THR_UI, this function will control by UI

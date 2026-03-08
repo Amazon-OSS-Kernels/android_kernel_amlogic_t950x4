@@ -39,6 +39,11 @@
 #ifdef CONFIG_WOL_POWER
 #include <linux/amlogic/scpi_protocol.h>
 #endif
+
+extern unsigned int wol_power_state;
+extern void set_wol_flag(unsigned int flag);
+extern void set_wol_notify_bl31(void);
+
 MODULE_DESCRIPTION("PHY library");
 MODULE_AUTHOR("Andy Fleming");
 MODULE_LICENSE("GPL");
@@ -126,12 +131,31 @@ static int mdio_bus_phy_suspend(struct device *dev)
 	 */
 #ifdef CONFIG_WOL_POWER
 	if (phydev->link) {
-		scpi_set_wol_power(1);
-		pr_info("Link is connect\n");
+#ifdef CONFIG_ENABLE_WOL_THR_UI
+		if (wol_power_state == 1) {
+#endif
+			scpi_set_wol_power(1);
+			set_wol_flag(1);
+			set_wol_notify_bl31();
+			pr_info("Link is connect\n");
+#ifdef CONFIG_ENABLE_WOL_THR_UI
+		} else {
+			scpi_set_wol_power(0);
+			set_wol_flag(0);
+			set_wol_notify_bl31();
+		}
+#endif
 	} else	{
 		scpi_set_wol_power(0);
+		set_wol_flag(0);
+		set_wol_notify_bl31();
 		pr_info("Link is NOT connect\n");
 	}
+#endif
+#ifdef CONFIG_DISABLE_WOL
+	scpi_set_wol_power(0);
+	set_wol_flag(0);
+	set_wol_notify_bl31();
 #endif
 	if (phydev->attached_dev && phydev->adjust_link)
 		phy_stop_machine(phydev);

@@ -87,10 +87,12 @@ struct aml_demod_sta {
 	u8_t tmp;
 	u32_t sts;		/*pointer */
 	u8_t spectrum;
-	enum fe_delivery_system delsys;
 #ifdef CONFIG_AMLOGIC_DTV_DEMOD_V3
+	u8_t is_blind_scan;
 	u8_t ci_mode;
+	u8_t is_singlecable;
 #endif
+	enum fe_delivery_system delsys;
 };
 
 struct aml_demod_dvbc {

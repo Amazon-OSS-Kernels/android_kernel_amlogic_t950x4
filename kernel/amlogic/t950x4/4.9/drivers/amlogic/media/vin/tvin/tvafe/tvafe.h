@@ -33,7 +33,8 @@
 /* *** macro definitions ********************************************* */
 /* *********************************************************** */
 /* 20220117: avin 0% white cannot detect signal (203114) */
-#define TVAFE_VER "20220117"
+/* 20220430: PALM CC not display */
+#define TVAFE_VER "20220430 PALM CC not display"
 
 /* used to set the flag of tvafe_dev_s */
 #define TVAFE_FLAG_DEV_OPENED 0x00000010

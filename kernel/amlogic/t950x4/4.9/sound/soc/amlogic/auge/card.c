@@ -137,6 +137,8 @@ struct aml_card_data {
 	bool av_mute_enable;
 	bool spk_mute_enable;
 	bool acodec_mute_enable;
+	/* mixer control vals */
+	bool spk_mute;
 	struct aml_chipset_info *chipinfo;
 	int irq_exception64;
 	/* soft locker attached to */
@@ -873,6 +875,7 @@ static int spk_mute_set(struct snd_kcontrol *kcontrol,
 		bool value = active_low ? !mute : mute;
 
 		gpio_set_value(gpio, value);
+		priv->spk_mute = mute;
 		pr_info("spk_mute_set: mute flag = %d\n", mute);
 	}
 
@@ -1167,6 +1170,13 @@ static int card_resume_post(struct snd_soc_card *card)
 	priv->av_mute_enable = 0;
 	priv->spk_mute_enable = 0;
 	priv->acodec_mute_enable = 0;
+
+	/* if the value equals to GPIOF_OUT_INIT_LOW,
+	 * it means speaker amp is muted
+	 */
+	if (priv->spk_mute)
+		priv->spk_mute_enable = 1;
+
 	INIT_WORK(&priv->init_work, aml_init_work);
 	schedule_work(&priv->init_work);
 
@@ -1390,11 +1400,30 @@ static void aml_card_platform_shutdown(struct platform_device *pdev)
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
 	struct aml_card_data *priv = snd_soc_card_get_drvdata(card);
 
-	priv->av_mute_enable = 1;
-	priv->spk_mute_enable = 1;
-	priv->acodec_mute_enable = 1;
-	INIT_WORK(&priv->init_work, aml_init_work);
-	schedule_work(&priv->init_work);
+	/* mute gpio immediately */
+	if (gpio_is_valid(priv->spk_mute_gpio)) {
+		gpio_set_value(priv->spk_mute_gpio,
+			(priv->spk_mute_active_low) ? GPIOF_OUT_INIT_LOW :
+			GPIOF_OUT_INIT_HIGH);
+		pr_info("%s, spk mute active low = %d\n", __func__,
+			priv->spk_mute_active_low);
+	}
+
+	if (gpio_is_valid(priv->acodec_mute_gpio)) {
+		gpio_set_value(priv->acodec_mute_gpio,
+			(priv->acodec_mute_active_low) ? GPIOF_OUT_INIT_LOW :
+			GPIOF_OUT_INIT_HIGH);
+		pr_info("%s, acodec mute active low = %d\n", __func__,
+			priv->acodec_mute_active_low);
+	}
+
+	if (!IS_ERR(priv->avout_mute_desc)) {
+		gpiod_direction_output(priv->avout_mute_desc,
+			GPIOF_OUT_INIT_LOW);
+		pr_info("%s, av out status: %s\n", __func__,
+			gpiod_get_value(priv->avout_mute_desc) ?
+			"high" : "low");
+	}
 }
 
 static struct platform_driver aml_card = {

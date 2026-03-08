@@ -491,7 +491,13 @@ void wr_reg_clk_ctl(unsigned int offset, unsigned int val)
 	wr_reg(MAP_ADDR_MODULE_CLK_CTRL, addr, val);
 	spin_unlock_irqrestore(&reg_rw_lock, flags);
 }
-
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+void hdmirx_wr_bits_clk_ctl(unsigned int addr,
+	unsigned int mask, unsigned int value)
+{
+	wr_reg_clk_ctl(addr, rx_set_bits(rd_reg_clk_ctl(addr), mask, value));
+}
+#endif
 /*
  * rd_reg_hhi
  * @offset: offset address of hhi physical addr
@@ -1997,7 +2003,21 @@ void control_reset(void)
 	mdelay(1);
 	hdmirx_wr_dwc(DWC_DMI_SW_RST,	0x0000001F);
 }
-
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+void rx_clk_en(bool en)
+{
+	hdcp22_clk_en(en);
+	/* enable gate of cts_hdmirx_modet_clk */
+	/* enable gate of cts_hdmirx_cfg_clk */
+	if (rx.chip_id >= CHIP_ID_T5) {
+		hdmirx_wr_bits_clk_ctl(HHI_HDMIRX_CLK_CNTL, MODET_CLK_EN, en);
+		hdmirx_wr_bits_clk_ctl(HHI_HDMIRX_CLK_CNTL, CFG_CLK_EN, en);
+	} else {
+		wr_reg_hhi_bits(HHI_HDMIRX_CLK_CNTL, MODET_CLK_EN, en);
+		wr_reg_hhi_bits(HHI_HDMIRX_CLK_CNTL, CFG_CLK_EN, en);
+	}
+}
+#endif
 void rx_esm_tmdsclk_en(bool en)
 {
 	if (rx.chip_id >= CHIP_ID_TL1)
@@ -2064,11 +2084,21 @@ void hdcp22_clk_en(bool en)
 			/* for arbitrating AXI requests from HDMI TX and RX.*/
 			hdmirx_wr_bits_top(TOP_CLK_CNTL, MSK(1, 12), 0x1);
 	} else {
+#ifndef CONFIG_POWER_CONSUMPTION_OPTIMIZE
 		hdmirx_wr_bits_top(TOP_CLK_CNTL, MSK(3, 3), 0x0);
 		if (rx.chip_id >= CHIP_ID_T5)
 			wr_reg_clk_ctl(HHI_HDCP22_CLK_CNTL, 0);
 		else
 			wr_reg_hhi(HHI_HDCP22_CLK_CNTL, 0);
+#else
+		if (rx.chip_id >= CHIP_ID_T5) {
+			wr_reg_clk_ctl(HHI_HDCP22_CLK_CNTL, 0);
+			wr_reg_clk_ctl(HHI_AXI_CLK_CTNL, 0);
+		} else {
+			wr_reg_hhi(HHI_HDCP22_CLK_CNTL, 0);
+			wr_reg_hhi(HHI_AXI_CLK_CTNL, 0);
+		}
+#endif
 	}
 }
 
