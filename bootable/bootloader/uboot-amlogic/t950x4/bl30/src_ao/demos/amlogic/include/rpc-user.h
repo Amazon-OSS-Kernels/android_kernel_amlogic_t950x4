@@ -38,8 +38,9 @@
 #define CMD_CLR_WAKEUP_REASON   0x31
 #define CMD_GET_LED_INFO        0xF7
 #define CMD_SET_WOL_POWER       0xF8
-
-
+#ifdef SHINE_PROJECT
+#define CMD_SET_WOL_GPIO            0xF9
+#endif
 
 /*******************************************************************************
  * Mssage Comopsition
@@ -56,5 +57,7 @@
 #define MBX_CMD_CPU_FSM_IDLE   __MBX_COMPOSE_MSG(MBX_SYSTEM, CMD_CPU_FSM_IDLE)
 #define MBX_CMD_GET_LED_INFO __MBX_COMPOSE_MSG(MBX_SYSTEM, CMD_GET_LED_INFO)
 #define MBX_CMD_SET_WOL_POWER __MBX_COMPOSE_MSG(MBX_SYSTEM, CMD_SET_WOL_POWER)
-
+#ifdef SHINE_PROJECT
+#define MBX_CMD_SET_WOL_GPIO __MBX_COMPOSE_MSG(MBX_SYSTEM, CMD_SET_WOL_GPIO)
+#endif
 #endif

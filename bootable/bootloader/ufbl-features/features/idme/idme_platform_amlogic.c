@@ -39,7 +39,12 @@ int idme_platform_read(unsigned char *pbuf)
 	 * Amlogic upated uboot v2019 for ABC/ABC, which has different API
 	 * definition
 	 */
-#if defined(UFBL_PROJ_ABC) || defined(UFBL_PROJ_ABC) || defined(UFBL_PROJ_ABC) || defined(UFBL_PLAT_AML_S905Y4) || defined(UFBL_PROJ_ABC)
+#if defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PLAT_AML_S905Y4) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_abc123)
 	if (mmc_switch_part(mmc, CONFIG_IDME_PARTITION_NUM) != 0) {
 #else
 	if (mmc_switch_part(CFG_FASTBOOT_MMC_NO, CONFIG_IDME_PARTITION_NUM) != 0) {
@@ -68,7 +73,12 @@ int idme_platform_read(unsigned char *pbuf)
 					IDME_NUM_OF_EMMC_BLOCKS, pbuf);
 #endif
 
-#if defined(UFBL_PROJ_ABC) || defined(UFBL_PROJ_ABC) || defined(UFBL_PROJ_ABC) || defined(UFBL_PLAT_AML_S905Y4) || defined(UFBL_PROJ_ABC)
+#if defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PLAT_AML_S905Y4) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_abc123)
 	if (mmc_switch_part(mmc, 0) != 0) {
 #else
 	if (mmc_switch_part(CFG_FASTBOOT_MMC_NO, 0) != 0) {
@@ -111,7 +121,12 @@ int idme_platform_write(const unsigned char *pbuf)
 	 * Amlogic upated uboot v2019 for ABC/ABC, which has different API
 	 * definition
 	 */
-#if defined(UFBL_PROJ_ABC)  || defined(UFBL_PROJ_ABC) || defined(UFBL_PROJ_ABC) || defined(UFBL_PLAT_AML_S905Y4) || defined(UFBL_PROJ_ABC)
+#if defined(UFBL_PROJ_ABC)  \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PLAT_AML_S905Y4) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_abc123)
 	if (mmc_switch_part(mmc, CONFIG_IDME_PARTITION_NUM) != 0) {
 #else
 	if (mmc_switch_part(CFG_FASTBOOT_MMC_NO, CONFIG_IDME_PARTITION_NUM) != 0) {
@@ -142,7 +157,12 @@ int idme_platform_write(const unsigned char *pbuf)
 					IDME_NUM_OF_EMMC_BLOCKS, pbuf);
 #endif
 
-#if defined(UFBL_PROJ_ABC) || defined(UFBL_PROJ_ABC) || defined(UFBL_PROJ_ABC) || defined(UFBL_PLAT_AML_S905Y4) || defined(UFBL_PROJ_ABC)
+#if defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PLAT_AML_S905Y4) \
+	|| defined(UFBL_PROJ_ABC) \
+	|| defined(UFBL_PROJ_abc123)
 	if (mmc_switch_part(mmc, 0) != 0) {
 #else
 	if (mmc_switch_part(CFG_FASTBOOT_MMC_NO, 0) != 0) {

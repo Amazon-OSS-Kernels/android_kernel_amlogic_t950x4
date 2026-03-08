@@ -21,6 +21,7 @@
 #include "vrtc.h"
 #include "mailbox-api.h"
 #include "wakeup.h"
+#include "gpio.h"
 
 void system_resume(uint32_t pm);
 void system_suspend(uint32_t pm);
@@ -132,11 +133,44 @@ void system_resume(uint32_t pm)
 	if (shutdown_flag)
 		watchdog_reset_system();
 }
-
+#ifdef SHINE_PROJECT
+extern int led_brightness;
+extern int poweroff_gpioh7;
+#endif
 void system_suspend(uint32_t pm)
 {
 	uint32_t shutdown_flag = 0;
+#ifdef HADRIAN_PROJECT
+        int ret;
+        ret = xGpioSetDir(GPIOH_7,GPIO_DIR_OUT);
+        if (ret < 0) {
+                printf("GPIOH_7 set gpio dir fail\n");
+            	return;
+        }
 
+        ret = xGpioSetValue(GPIOH_7,GPIO_LEVEL_LOW);
+        if (ret < 0) {
+                printf("GPIOH_7 set gpio val fail\n");
+                return;
+        }
+#endif
+#ifdef SHINE_PROJECT
+/*used for workaround HADRIAN abc123 I2C issue*/
+	if(poweroff_gpioh7){
+		int ret;
+        	ret = xGpioSetDir(GPIOH_7,GPIO_DIR_OUT);
+        	if (ret < 0) {
+                	printf("GPIOH_7 set gpio dir fail\n");
+                	return;
+        	}
+
+        	ret = xGpioSetValue(GPIOH_7,GPIO_LEVEL_LOW);
+        	if (ret < 0) {
+                	printf("GPIOH_7 set gpio val fail\n");
+                	return;
+        	}
+	}
+#endif
 	if (pm == 0xf)
 		shutdown_flag = 1;
 
@@ -152,6 +186,9 @@ void system_suspend(uint32_t pm)
 #ifdef HADRIAN_PROJECT
 	printf("LED:Brightness 50%%\n");
         xLedsStateSetBrightness(0, 128);
+#elif  SHINE_PROJECT
+	printf("LED:Brightness %d%%\n", led_brightness);
+        xLedsStateSetBrightness(0, led_brightness*255/100);
 #else
 	printf("LED:Brightness 20%%\n");
 	xLedsStateSetBrightness(0, 51);
@@ -335,5 +372,12 @@ void create_str_task(void)
 					xETHPowerEnable, 0);
 	if (ret == MBOX_CALL_MAX)
 		printf("mbox cmd 0x%x register fail\n", MBX_CMD_SET_WOL_POWER);
+
+#ifdef SHINE_PROJECT
+	ret = xInstallRemoteMessageCallbackFeedBack(AOREE_CHANNEL, MBX_CMD_SET_WOL_GPIO,
+                                        xETHPowerGPIO, 0);
+        if (ret == MBOX_CALL_MAX)
+                printf("mbox cmd 0x%x register fail\n", MBX_CMD_SET_WOL_GPIO);
+#endif
 #endif
 }

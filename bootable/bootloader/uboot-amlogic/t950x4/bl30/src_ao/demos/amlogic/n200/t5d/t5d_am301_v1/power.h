@@ -9,4 +9,7 @@ extern void str_power_off(int shutdown_flag);
 
 #ifdef CONFIG_ETH_WAKEUP
 extern void xETHPowerEnable(void *data);
+#ifdef SHINE_PROJECT
+extern void xETHPowerGPIO(void *data);
+#endif
 #endif
