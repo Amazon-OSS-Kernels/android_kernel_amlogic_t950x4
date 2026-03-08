@@ -57,6 +57,8 @@
 
 #define UBOOT_TARGET_PRODUCT_NAME_ALMOND
 
+//#define USB_UPGRADE_IN_ONE_FILE
+
 /* Bootloader Control Block function
    That is used for recovery and the bootloader to talk to each other
   */
@@ -86,6 +88,11 @@
 #define CONFIG_ADC_POWER_KEY_CHAN   2  /*channel range: 0-7*/
 #define CONFIG_ADC_POWER_KEY_VAL    0  /*sample value range: 0-1023*/
 
+#ifdef USB_UPGRADE_IN_ONE_FILE
+#define USB_TOOLS_NO_ERASE_CRI_DATA             1
+#define CONFIG_PROTECT_USR_PARTITION            "cri_data"
+#endif
+
 /* args/envs */
 #define CONFIG_SYS_MAXARGS  64
 #define CONFIG_EXTRA_ENV_SETTINGS \
@@ -114,7 +121,7 @@
         "fb_height=1080\0" \
         "frac_rate_policy=1\0" \
         "usb_burning=adnl 2000\0" \
-        "otg_device=1\0"\
+        "recovery_otg_device=none\0"\
         "fdt_high=0x20000000\0"\
         "try_auto_burn=adnl 1000 1500;\0"\
         "sdcburncfg=aml_sdc_burn.ini\0"\
@@ -166,7 +173,7 @@
             "else fi;"\
             "\0"\
         "storeargs="\
-            "setenv bootargs ${initargs} otg_device=${otg_device} logo=${display_layer},loaded,${fb_addr} powermode=${powermode} fb_width=${fb_width} fb_height=${fb_height} display_bpp=${display_bpp} outputmode=${outputmode} vout=${outputmode},enable panel_type=${panel_type} hdmimode=${hdmimode} cvbsmode=${cvbsmode} osd_reverse=${osd_reverse} video_reverse=${video_reverse} androidboot.selinux=${EnableSelinux} androidboot.firstboot=${firstboot} androidboot.rpmb_state=${rpmb_state} jtag=${jtag} mem_size=${mem_size}; "\
+            "setenv bootargs ${initargs} logo=${display_layer},loaded,${fb_addr} powermode=${powermode} fb_width=${fb_width} fb_height=${fb_height} display_bpp=${display_bpp} outputmode=${outputmode} vout=${outputmode},enable panel_type=${panel_type} hdmimode=${hdmimode} cvbsmode=${cvbsmode} osd_reverse=${osd_reverse} video_reverse=${video_reverse} androidboot.selinux=${EnableSelinux} androidboot.firstboot=${firstboot} androidboot.rpmb_state=${rpmb_state} jtag=${jtag} mem_size=${mem_size}; "\
             "setenv bootargs ${bootargs} androidboot.hardware=amlogic androidboot.build.expect.baseband=N/A;"\
             "setenv bootargs ${bootargs} androidboot.Dolby_enabled=${Dolby_enabled}; "\
             "setenv bootargs ${bootargs} androidboot.Dts_enabled=${DTS_enabled}; "\
@@ -342,6 +349,7 @@
             "if fatload mmc 0 ${loadaddr} recovery.img; then "\
                     "if fatload mmc 0 ${dtb_mem_addr} dtb.img; then echo sd dtb.img loaded; fi;"\
                     "wipeisb; "\
+		    "setenv recovery_otg_device host;" \
                     "bootm ${loadaddr};fi;"\
             "\0"\
         "recovery_from_udisk="\
@@ -349,6 +357,7 @@
             "if fatload usb 0 ${loadaddr} recovery.img; then "\
                 "if fatload usb 0 ${dtb_mem_addr} dtb.img; then echo udisk dtb.img loaded; fi;"\
                 "wipeisb; "\
+		"setenv recovery_otg_device host;" \
                 "bootm ${loadaddr};fi;"\
             "\0"\
         "recovery_from_flash="\
@@ -358,13 +367,13 @@
                 "setenv bootargs ${bootargs} ${fs_type} aml_dt=${aml_dt} recovery_part=${recovery_part} recovery_offset=${recovery_offset};"\
                 "if itest ${upgrade_step} == 3; then "\
                     "if ext4load mmc 1:2 ${dtb_mem_addr} /recovery/dtb.img; then echo cache dtb.img loaded; fi;"\
-                    "if ext4load mmc 1:2 ${loadaddr} /recovery/recovery.img; then echo cache recovery.img loaded; wipeisb; bootm ${loadaddr}; fi;"\
+                    "if ext4load mmc 1:2 ${loadaddr} /recovery/recovery.img; then echo cache recovery.img loaded; wipeisb; setenv recovery_otg_device host; bootm ${loadaddr}; fi;"\
                 "else fi;"\
-                "if imgread kernel ${recovery_part} ${loadaddr} ${recovery_offset}; then wipeisb; bootm ${loadaddr}; fi;"\
+                "if imgread kernel ${recovery_part} ${loadaddr} ${recovery_offset}; then wipeisb; setenv recovery_otg_device host; bootm ${loadaddr}; fi;"\
             "else "\
                 "if test ${partiton_mode} = normal; then "\
                     "setenv bootargs ${bootargs} ${fs_type} aml_dt=${aml_dt} recovery_part=${boot_part} recovery_offset=${recovery_offset};"\
-                    "if imgread kernel ${boot_part} ${loadaddr}; then bootm ${loadaddr}; fi;"\
+                    "if imgread kernel ${boot_part} ${loadaddr}; then setenv recovery_otg_device host; bootm ${loadaddr}; fi;"\
                 "else "\
                     "setenv bootargs ${bootargs} ${fs_type} aml_dt=${aml_dt} recovery_part=${recovery_part} recovery_offset=${recovery_offset};"\
                     "if imgread kernel ${recovery_part} ${loadaddr} ${recovery_offset}; then wipeisb; bootm ${loadaddr}; fi;"\
@@ -494,6 +503,7 @@
         "upgrade_usb="\
             "if usb start 0; then "\
                  "if fatload usb 0 ${loadaddr} flash_script; then uboot_update ${loadaddr}; fi;"\
+                 "usb_upgrade_fos;"\
             "fi;"\
             "\0"\
 

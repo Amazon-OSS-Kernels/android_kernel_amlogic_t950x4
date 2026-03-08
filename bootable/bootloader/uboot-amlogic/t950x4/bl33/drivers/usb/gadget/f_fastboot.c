@@ -60,6 +60,10 @@ extern int is_locked_production_device();
 #include <amzn_onetime_unlock.h>
 #endif
 
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+#include <amzn_temp_unlock.h>
+#endif
+
 #if defined(UFBL_FEATURE_SECURE_BOOT)
 #include "amzn_secure_boot.h"
 #else
@@ -619,6 +623,7 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 	chars_left = sizeof(response_str) - strlen(response) - 1;
 
 	memcpy(cmdBuf, cmd, strnlen(cmd, RESPONSE_LEN-1)+1);
+	cmdBuf[RESPONSE_LEN - 1] = 0;
 	cmd = cmdBuf;
 	strsep(&cmd, ":");
 	printf("cb_getvar: %s\n", cmd);
@@ -704,8 +709,8 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 		uint32_t bl33 = (mvn_1) & 0xff;
 		uint32_t bl32 = (mvn_1 >> 8) & 0xff;
 		uint32_t bl31 = (mvn_1 >> 16) & 0xff;
-		uint32_t bl30 = (mvn_1 >> 24) & 0xff;
-		uint32_t fip  = (mvn_2 >> 16) & 0xff;
+		uint32_t fip = (mvn_1 >> 24) & 0xff;
+		uint32_t bl30  = (mvn_2 >> 16) & 0xff;
 		uint32_t bl2  = (mvn_2 >> 24) & 0xff;
 		snprintf(arb_version, sizeof(arb_version), "BL33:0x%x,BL32:0x%x,BL31:0x%x,BL30:0x%x,FIP:0x%x,BL2:0x%x\n", bl33,bl32,bl31,bl30,fip,bl2);
 		strncat(response, arb_version, chars_left);
@@ -720,7 +725,7 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 		s = get_usid_string();
 #if defined(CONFIG_IDME)
 		char buf[24] = {0};
-		if (!idme_get_var_external("oem_data", buf, sizeof(buf)))
+		if (!idme_get_var_external("serial", buf, sizeof(buf)))
 			s = buf;
 #endif
 		if (s)
@@ -761,7 +766,17 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 
 	} else if (!strcmp_l1("unlock_status", cmd)) {
 		char str_num[2];
-		snprintf(str_num, sizeof(str_num), "%d", amzn_target_is_unlocked() ? 1 : 0);
+		int unlock_status = 0;
+#if defined(UFBL_FEATURE_UNLOCK)
+		unlock_status = amzn_target_is_unlocked();
+#endif
+#if defined(UFBL_FEATURE_ONETIME_UNLOCK)
+		unlock_status |= amzn_target_is_onetime_unlocked();
+#endif
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+		unlock_status |= amzn_target_is_temp_unlocked();
+#endif
+		snprintf(str_num, sizeof(str_num), "%d", unlock_status ? 1 : 0);
 		strncat(response, str_num, chars_left);
 	} else if (!strcmp_l1("unlock_version", cmd)) {
 		strncat(response, "1", chars_left);
@@ -778,6 +793,17 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 			one_tu_code[ONETIME_UNLOCK_CODE_LEN] = '\0';
 			snprintf(str_num, sizeof(str_num), "%s", one_tu_code);
 			strncat(response, str_num, chars_left);
+		}
+	}
+#endif
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+	else if (!strcmp_l1("tu_code", cmd)) {
+		unsigned char tu_code[BASE64_LEN(TEMP_UNLOCK_CODE_LEN) + 1] = {0};
+		unsigned int tu_code_len = sizeof(tu_code);
+		if (amzn_get_temp_unlock_current_code(tu_code, &tu_code_len)) {
+			strncat(response, "cannot get temp unlock code", chars_left);
+		} else {
+			strncat(response, tu_code, chars_left);
 		}
 	}
 #endif
@@ -962,13 +988,18 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 		}
 #endif
 	} else if (!strcmp_l1("slot-successful", cmd)) {
-		char str[128];
+		char str[128]={0};
 		strsep(&cmd, ":");
 		printf("cmd is %s\n", cmd);
 		int ret;
 		if (has_boot_slot == 1) {
 			printf("has boot slot\n");
-			sprintf(str, "get_slot_state %s successful", cmd);
+			if (strcmp(cmd, "a") && strcmp(cmd, "b")) {
+				printf("we only have a/b slot now, variable error\n");
+				strcpy(response, "FAILVariable error, only have a/b slot now");
+				goto exit;
+			}
+			snprintf(str,128, "get_slot_state %s suc_stete", cmd);
 			printf("command:    %s\n", str);
 			ret = run_command(str, 0);
 			printf("ret = %d\n", ret);
@@ -979,13 +1010,18 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 		} else
 			strcpy(response, "FAILVariable not implemented in non ab mode");
 	} else if (!strcmp_l1("slot-unbootable", cmd)) {
-		char str[128];
+		char str[128]={0};
 		strsep(&cmd, ":");
 		printf("cmd is %s\n", cmd);
 		int ret;
 		if (has_boot_slot == 1) {
 			printf("has boot slot\n");
-			sprintf(str, "get_slot_state %s unbootable", cmd);
+			if (strcmp(cmd, "a") && strcmp(cmd, "b")) {
+				printf("we only have a/b slot now, variable error\n");
+				strcpy(response, "FAILVariable error, only have a/b slot now");
+				goto exit;
+			}
+			snprintf(str,128, "get_slot_state %s boot_state", cmd);
 			printf("command:    %s\n", str);
 			ret = run_command(str, 0);
 			printf("ret = %d\n", ret);
@@ -996,26 +1032,83 @@ static void cb_getvar(struct usb_ep *ep, struct usb_request *req)
 		} else
 			strcpy(response, "FAILVariable not implemented in non ab mode");
 	} else if (!strcmp_l1("slot-retry-count", cmd)) {
-		char str[128];
 		strsep(&cmd, ":");
 		printf("cmd is %s\n", cmd);
-		int ret;
 		if (has_boot_slot == 1) {
-			char str_num[12];
+			char *str_num = NULL;
 			printf("has boot slot\n");
-			sprintf(str, "get_slot_state %s retry-count", cmd);
-			printf("command:    %s\n", str);
-			ret = run_command(str, 0);
-			printf("ret = %d\n", ret);
-			sprintf(str_num, "%d", ret);
-			strncat(response, str_num, chars_left);
+			if (strcmp(cmd, "a") && strcmp(cmd, "b")) {
+				printf("we only have a/b slot now, variable error\n");
+				strcpy(response, "FAILVariable error, only have a/b slot now");
+				goto exit;
+			}
+			if (strcmp(cmd, "a") == 0) {
+				str_num = getenv("retry-count_a");
+			}else if (strcmp(cmd, "b") == 0) {
+				str_num = getenv("retry-count_b");
+			}
+			if (str_num)
+				strncat(response, str_num, chars_left);
+			else
+				strcpy(response, "FAILGet retry-count error");
 		} else
 			strcpy(response, "FAILVariable not implemented in non ab mode");
-	} else {
+	} else if ( !strcmp_l1("checksum", cmd)) {
+		char cmd_str[RESPONSE_LEN] = {0};
+		char *default_part[] = {"boot", "vendor", "tvconfig",
+				"odm", "system", "product", "recovery", NULL};
+		char **part_ptr = NULL;
+		int flag = 0;
+		char *checksum;
+		char *cmd_check = strsep(&cmd, ":");
+		//strcat(cmd_str, cmd_check);
+		snprintf(cmd_str, RESPONSE_LEN, "checksum");
+		strncat(cmd_str, " ",1);
+		char *cmd_part = strsep(&cmd, ":");
+		printf("To run cmd[%s]\n", cmd_check);
+
+		if((cmd_part == NULL) || (strlen(cmd_part) == 0)) {
+			printf("partition name is NULL\n");
+			strcpy(response, "FAIL partition name is NULL");
+			printf("run command like this : fastboot getvar checksum:boot_a:0x20000000\n");
+			fastboot_tx_write_str(response);
+			return;
+		}
+
+		for (part_ptr = default_part; *part_ptr != NULL; part_ptr++) {
+			if (strncmp(cmd_part, *part_ptr, sizeof(*part_ptr)-1) == 0) {
+				flag = 1;
+				break;
+			}
+		}
+		if (flag == 0) {
+			printf("illegal partition name.\n");
+			strcpy(response, "FAIL partition name is illegal");
+			fastboot_tx_write_str(response);
+			return;
+		}
+
+		printf("partition is %s\n",cmd_part);
+
+		strncat(cmd_str, cmd_part, strlen(cmd_part));
+		strncat(cmd_str, " ", 1);
+		printf("cmd_str: %s\n", cmd_str);
+
+		run_command(cmd_str, 0);
+
+		char *response = response_str;
+		size_t chars_left;
+		strcpy(response, "OKAY");
+		chars_left = sizeof(response_str) - strlen(response) - 1;
+		checksum = getenv("checksum_partition");
+		strncat(response, checksum, chars_left);
+		fastboot_tx_write_str(response);
+	 } else {
 		error("unknown variable: %s\n", cmd);
 		strcpy(response, "FAILVariable not implemented");
 	}
 
+exit:
 	fastboot_tx_write_str(response);
 }
 
@@ -1528,6 +1621,10 @@ static void cb_oem_relock(struct usb_ep *ep, struct usb_request *req)
 
 	if (idme_update_var_ex("unlock_code", code, sizeof(code))) {
 		strcpy(response, "FAILrelock failed");
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+	} else if (amzn_clear_temp_unlock_idme()) {
+		strcpy(response, "FAILrelock failed");
+#endif
 	} else {
 		idme_auto_clean_before_relock();
 		strcpy(response, "OKAY");
@@ -1888,6 +1985,24 @@ static void cb_flash(struct usb_ep *ep, struct usb_request *req)
 			} else {
 				fastboot_tx_write_str("OKAY");
 			}
+		return;
+	}
+#endif
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+	else if (!strcmp_l1("tucert", cmd)) {
+		if (amzn_set_temp_unlock_idme_cert((void *)CONFIG_USB_FASTBOOT_BUF_ADDR, download_bytes)) {
+			fastboot_tx_write_str("FAILset temp unlock cert failed");
+		} else {
+			fastboot_tx_write_str("OKAY");
+		}
+		return;
+	}
+	else if (!strcmp_l1("tucode", cmd)) {
+		if (amzn_set_temp_unlock_idme_code((void *)CONFIG_USB_FASTBOOT_BUF_ADDR, download_bytes)) {
+			fastboot_tx_write_str("FAILset signed temp unlock code failed");
+		} else {
+			fastboot_tx_write_str("OKAY");
+		}
 		return;
 	}
 #endif

@@ -468,7 +468,7 @@ int dfu_config_entities(char *env, char *interface, char *devstr)
 			error("Hash algorithm %s not supported\n", s);
 	}
 
-	dfu = calloc(sizeof(*dfu), dfu_alt_num);
+	dfu = calloc(sizeof(*dfu), (unsigned int)dfu_alt_num);
 	if (!dfu)
 		return -1;
 	for (i = 0; i < dfu_alt_num; i++) {

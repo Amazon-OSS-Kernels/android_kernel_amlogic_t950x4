@@ -1,4 +1,4 @@
-/* Copyright 2017 Amazon.com, Inc. or its affiliates. All Rights Reserved. */
+/* Copyright 2017 - 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved. */
 
 #include <common.h>
 
@@ -14,6 +14,14 @@
 #error "UFBL_FEATURE_UNLOCK is required"
 #endif
 
+#if defined(UFBL_FEATURE_ONETIME_UNLOCK)
+#include "amzn_onetime_unlock.h"
+#endif
+
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+#include "amzn_temp_unlock.h"
+#endif
+
 /*
  * At U-Boot prompt, we only allow fastboot and reset
  * commands unless the device is unlocked (via fastboot), OR
@@ -22,7 +30,15 @@
 static const char *whitelisted_commands[] = {
 	"fastboot",
 	"reset",
+#if defined(UFBL_FEATURE_ONETIME_UNLOCK)
 	"onetimeunlock",
+#endif
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+	"tempunlock",
+#endif
+#if defined(UFBL_FEATURE_UNLOCK)
+	"relock",
+#endif
 	"reboot"
 };
 
@@ -49,8 +65,17 @@ bool amzn_is_command_blocked(const char *cmd)
 	if (amzn_target_is_unlocked())
 		return false;
 
-	if (amzn_target_is_onetime_unlocked())
+#if defined(UFBL_FEATURE_ONETIME_UNLOCK)
+	if (amzn_target_is_onetime_unlocked()) {
 		return false;
+	}
+#endif
+
+#if defined(UFBL_FEATURE_TEMP_UNLOCK)
+	if (amzn_target_is_temp_unlocked()){
+		return false;
+	}
+#endif
 
 	/* If command is on the white-list, allow */
 	for (i = 0; i < ARRAY_SIZE(whitelisted_commands); i++)

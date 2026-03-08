@@ -860,6 +860,7 @@ int checkhw(char * name)
     /*if use ddr size to identify*/
 	unsigned int ddr_size = 0;
 	char dtb_name[64] = {0};
+	char product_name[64] = {0};
 	int i;
 	char amp_type[256]   = { 0 };
 	for (i=0; i<CONFIG_NR_DRAM_BANKS; i++) {
@@ -915,18 +916,22 @@ int checkhw(char * name)
 			setenv("mem_size", "512m");
 			break;
 		case 0x60000000:
+			idme_get_var_external("product_name", product_name, sizeof(product_name));
 			if (cpu_id.chip_rev == 0xA) {
 				strcpy(dtb_name, "t5d-reva_t950d4_am301-1.5g\0");
 				setenv("cpu_version", "rev_a");
-            }
+			}
 			else if(!strcmp(amp_type, "acm8625")) {
 				strcpy(dtb_name, "t5d_t950d4_v4-hw-am301-1.5g\0");
 				setenv("cpu_version", "rev_b");
 			}
+			else if (strcmp("ABC", product_name) == 0) {
+				strcpy(dtb_name, "t5d_t950d4_ABC-1.5g\0");
+			}
 			else {
 				strcpy(dtb_name, "t5d_t950d4_proto-am301-1.5g\0");
 				setenv("cpu_version", "rev_b");
-            }
+			}
 			setenv("mem_size", "1.5g");
 			break;
 		default:
