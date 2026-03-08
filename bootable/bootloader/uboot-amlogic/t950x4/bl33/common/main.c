@@ -346,6 +346,12 @@ void main_loop(void)
 					while (1) {
 						udelay(1000*1000);
 					}
+				} else if (strstr(oem_data, "shine-vv")) {
+					watchdog_disable();
+					printf("\n\nshipment mode operations finished\n\n");
+					while (1) {
+						udelay(1000*1000);
+					}
 				} else
 					run_command("reboot", 0);
 			}
