@@ -803,25 +803,31 @@ static int amlmmc_erase_non_loader(int argc, char *const argv[])
 			bool udiskUpgrade = getenv("usb_update");
 			if (udiskUpgrade) udiskUpgrade = !strcmp("1", getenv("usb_update"));
 			if (udiskUpgrade) {//normal erase for usb disk upgrade
+				const char *non_erase_parts[] = CONFIG_PROTECT_USR_PARTITION;
+				int i = 0;
+
 				printf("Udisk Normal erase_flash\n");
-				struct partitions* usrPart = find_mmc_partition_by_name(CONFIG_PROTECT_USR_PARTITION);
-				if ( !usrPart ) {
-					printf("Cannot find part[%s]\n", CONFIG_PROTECT_USR_PARTITION);
-					return 1;
+				for (; i < ARRAY_SIZE(non_erase_parts); ++i) {
+					const char* the_part = non_erase_parts[i];
+					struct partitions* usrPart = find_mmc_partition_by_name((char *)the_part);
+					if ( !usrPart ) {
+						printf("Cannot find part[%s]\n", the_part);
+						return 1;
+					}
+					u64 partCnt = (usrPart->offset >> blk_shift) - start_blk;
+					printf("To erase area before usr part(%s) from %llx ~ %llx\n",
+							the_part, start_blk, partCnt);
+					n = mmc->block_dev.block_erase(dev, start_blk, partCnt);
+					if ( n ) {
+						printf("FAil in erase before %s\n", the_part);
+						return 1;
+					}
+					partCnt   += ((usrPart->size + PARTITION_RESERVED) >> blk_shift);
+					start_blk += partCnt;
+					erase_cnt -= partCnt;
+					printf("To erase area after usr part(%s) from %llx ~ %llx\n",
+							the_part, start_blk, erase_cnt);
 				}
-				u64 partCnt = (usrPart->offset >> blk_shift) - start_blk;
-				printf("To erase area before usr part(%s) from %llx ~ %llx\n",
-							CONFIG_PROTECT_USR_PARTITION, start_blk, partCnt);
-				n = mmc->block_dev.block_erase(dev, start_blk, partCnt);
-				if ( n ) {
-					printf("FAil in erase before %s\n", CONFIG_PROTECT_USR_PARTITION);
-					return 1;
-				}
-				partCnt   += ((usrPart->size + PARTITION_RESERVED) >> blk_shift);
-				start_blk += partCnt;
-				erase_cnt -= partCnt;
-				printf("To erase area after usr part(%s) from %llx ~ %llx\n",
-							CONFIG_PROTECT_USR_PARTITION, start_blk, erase_cnt);
 			}
 #endif//#if USB_TOOLS_NO_ERASE_CRI_DATA
 

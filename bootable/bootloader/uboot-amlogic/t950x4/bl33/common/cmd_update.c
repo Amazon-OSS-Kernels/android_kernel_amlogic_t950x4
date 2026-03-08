@@ -203,7 +203,17 @@ int idme_parse(const char *idme) {
     int offset = pb - buff;
     if (nidme > MAX_IDME_NUM-1) {
         printf("max value(%d) support idme set!\n", MAX_IDME_NUM);
-        return 0;
+        return -1;
+    }
+
+    if (offset < 1 || offset > NAME_MAX-1 ) {
+        printf("idme name wrong!\n");
+        return -1;
+    }
+
+    if (len-offset-3 < 1 || len-offset-3 > VALUE_MAX-1) {
+        printf("idme value wrong!\n");
+        return -1;
     }
 
     //get idme name and value

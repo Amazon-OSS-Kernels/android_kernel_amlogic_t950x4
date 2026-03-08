@@ -228,6 +228,7 @@ void main_loop(void)
 #ifdef DTB_BIND_KERNEL
 	unsigned char *dt_addr = NULL;
 	extern int emmc_update_mbr(unsigned char *);
+	char oem_data[64] = {0};
 #endif /* DTB_BIND_KERNEL */
 #endif
 
@@ -303,7 +304,7 @@ void main_loop(void)
 				printf("Transition from Diag to FOS failed\n");
 			} else {
 				printf("Transition from Diag to FOS succeed\n");
-#if defined(UBOOT_TARGET_PRODUCT_NAME_PRIMROSE) || defined (UBOOT_TARGET_PRODUCT_NAME_ALMOND) || defined (UBOOT_TARGET_PRODUCT_NAME_SHINE) || defined (UBOOT_TARGET_PRODUCT_NAME_DAHLIA) || defined (UBOOT_TARGET_PRODUCT_NAME_HADRIAN)
+#if defined(UBOOT_TARGET_PRODUCT_NAME_PRIMROSE) || defined (UBOOT_TARGET_PRODUCT_NAME_ALMOND) || defined (UBOOT_TARGET_PRODUCT_NAME_SHINE) || defined (UBOOT_TARGET_PRODUCT_NAME_DAHLIA)
 			if (bootmode == IDME_BOOTMODE_TRANSITION) {
 				run_command("reboot", 0);
 			} else {
@@ -323,6 +324,40 @@ void main_loop(void)
 				while (1)
 					udelay(1000*1000);
 				}
+#elif defined (UBOOT_TARGET_PRODUCT_NAME_HADRIAN)
+				ret = 0;
+				ret += run_command("osd open", 0);
+				ret += run_command("osd clear", 0);
+				/* mmc 1:d tvconfig, fixed */
+				idme_get_var_external("oem_data", oem_data, sizeof(oem_data));
+				if (strstr(oem_data, "hadrian") != NULL) {	//hadrian transition
+					if(amzn_target_is_lockdown()){
+						//locked down transition
+						ret += run_command("ext4load mmc 1:d ${loadaddr} /logo_img_files/transition_done.bmp", 0);
+					}else {
+						//unlocked transition
+						ret += run_command("ext4load mmc 1:d ${loadaddr} /logo_img_files/transition_done_red.bmp", 0);
+					}
+				} else{	//hadrian-hh transition
+					ret += run_command("ext4load mmc 1:d ${loadaddr} /logo_img_files/transition_done.bmp", 0);
+				}
+				if (ret == 0) {
+					ret += run_command("bmp display ${loadaddr}", 0);
+					ret += run_command("bmp scale", 0);
+					if (ret) {
+						printf("Displaying transition bmp failed.\n");
+					}
+					run_command("vout output ${outputmode}", 0);
+					run_command("led_mode 3", 0);
+				} else {
+					printf("Cannot load transition bmp.\n");
+				}
+				watchdog_disable();
+				printf("Stop after transition from diag to FOS\n");
+				while (1) {
+					udelay(1000*1000);
+				}
+
 #else
 				run_command("reboot", 0);
 #endif
