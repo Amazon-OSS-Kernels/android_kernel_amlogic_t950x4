@@ -77,6 +77,14 @@
  *	  friends.
  */
 
+/*
+ * Portions of this file are copyright (c) 2022 Amazon.com, Inc. or its affiliates.  All rights reserved.
+ *
+ * PORTIONS OF THIS FILE ARE AMAZON PROPRIETARY/CONFIDENTIAL.  USE IS SUBJECT TO LICENSE TERMS.
+ *
+ * Amazon modifications are indicated by [fosmod_* comments].
+ */
+
 #include <fcntl.h>
 #include <sys/cdefs.h>
 #include <sys/types.h>
@@ -595,6 +603,9 @@ android_getaddrinfofornetcontext(const char *hostname, const char *servname,
 	struct addrinfo ai0;
 	struct addrinfo *pai;
 	const struct explore *ex;
+	/* fosmod_connectivity_bug_fix begin */
+	const char* dns_ipv4_only = getenv("ipv4_only");
+	/* fosmod_connectivity_bug_fix end */
 
 	/* hostname is allowed to be NULL */
 	/* servname is allowed to be NULL */
@@ -653,6 +664,16 @@ android_getaddrinfofornetcontext(const char *hostname, const char *servname,
 			}
 		}
 	}
+
+	/* fosmod_connectivity_bug_fix begin */
+	/* If env variable 'ipv4_only' is set to true, it means dns resolve
+	 * prefers ipv4 when not specific set
+	 */
+	if (dns_ipv4_only && (strcmp(dns_ipv4_only,"true") == 0) &&
+		(pai->ai_family == PF_UNSPEC) ) {
+		pai->ai_family = PF_INET;
+	}
+	/* fosmod_connectivity_bug_fix end */
 
 	/*
 	 * check for special cases.  (1) numeric servname is disallowed if
@@ -731,8 +752,16 @@ android_getaddrinfofornetcontext(const char *hostname, const char *servname,
 		ERR(EAI_NONAME);
 
 #if defined(__ANDROID__)
+	/* fosmod_connectivity_bug_fix begin */
+	if (dns_ipv4_only && (strcmp(dns_ipv4_only,"true") == 0) &&
+		( pai->ai_family == PF_UNSPEC) ) {
+		pai->ai_family = PF_INET;
+	}
+
 	int gai_error = android_getaddrinfo_proxy(
-		hostname, servname, hints, res, netcontext->app_netid);
+		hostname, servname, /*hints*/pai, res, netcontext->app_netid);
+	/* fosmod_connectivity_bug_fix end */
+
 	if (gai_error != EAI_SYSTEM) {
 		return gai_error;
 	}
