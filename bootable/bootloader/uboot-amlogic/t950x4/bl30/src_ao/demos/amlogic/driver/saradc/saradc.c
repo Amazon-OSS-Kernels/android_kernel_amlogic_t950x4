@@ -1,0 +1,534 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * saradc driver
+ */
+#include "FreeRTOS.h"
+#include "util.h"
+#include "projdefs.h"
+#include "portmacro.h"
+#include "semphr.h"
+#include "task.h"
+#include "saradc.h"
+
+#include <unistd.h>
+#include "n200_func.h"
+#include "common.h"
+#include "timer_source.h"
+
+#define SARADC_DRV_NAME				"saradc"
+
+#define SARADC_MAX_FIFO_SIZE			16
+
+#define SAR_CLK_DIV_MASK			GENMASK(7, 0)
+#define SAR_CLK_DIV_SHIFT			(0)
+#define SAR_CLK_GATE				BIT(8)
+#define SAR_CLK_MUX_MASK			GENMASK(10, 9)
+
+#define P_SARADC(x)				(SARADC_BASE + (x))
+
+#define SARADC_REG0				0x00
+#define SARADC_REG0_BUSY_MASK			GENMASK(30, 28)
+#define SARADC_REG0_DELTA_BUSY			BIT(30)
+#define SARADC_REG0_AVG_BUSY			BIT(29)
+#define SARADC_REG0_SAMPLE_BUSY			BIT(28)
+#define SARADC_REG0_FIFO_FULL			BIT(27)
+#define SARADC_REG0_FIFO_EMPTY			BIT(26)
+#define SARADC_REG0_FIFO_COUNT_SHIFT		(21)
+#define SARADC_REG0_FIFO_COUNT_MASK		GENMASK(25, 21)
+#define SARADC_REG0_CURR_CHAN_ID_MASK		GENMASK(18, 16)
+#define SARADC_REG0_SAMPLING_STOP		BIT(14)
+#define SARADC_REG0_FIFO_CNT_IRQ_MASK		GENMASK(8, 4)
+#define SARADC_REG0_FIFO_CNT_IRQ_SHIFT		(4)
+#define SARADC_REG0_FIFO_IRQ_EN			BIT(3)
+#define SARADC_REG0_SAMPLING_START		BIT(2)
+#define SARADC_REG0_CONTINUOUS_EN		BIT(1)
+#define SARADC_REG0_SAMPLE_ENGINE_ENABLE	BIT(0)
+
+#define SARADC_CHAN_LIST			0x04
+#define SARADC_CHAN_LIST_MAX_INDEX_SHIFT	(24)
+#define SARADC_CHAN_LIST_MAX_INDEX_MASK		GENMASK(26, 24)
+#define SARADC_CHAN_LIST_ENTRY_SHIFT(_chan)	(_chan * 3)
+#define SARADC_CHAN_LIST_ENTRY_MASK(_chan)	\
+					(GENMASK(2, 0) << ((_chan) * 3))
+
+#define SARADC_AVG_CNTL				0x08
+#define SARADC_AVG_CNTL_AVG_MODE_SHIFT(_chan)	\
+					(16 + ((_chan) * 2))
+#define SARADC_AVG_CNTL_AVG_MODE_MASK(_chan)	\
+					(GENMASK(17, 16) << ((_chan) * 2))
+#define SARADC_AVG_CNTL_NUM_SAMPLES_SHIFT(_chan)  \
+					(0 + ((_chan) * 2))
+#define SARADC_AVG_CNTL_NUM_SAMPLES_MASK(_chan)  \
+					(GENMASK(1, 0) << ((_chan) * 2))
+
+#define SARADC_REG3				0x0c
+#define SARADC_REG3_BL30_INTEGRATION		BIT(28)
+#define SARADC_REG3_CTRL_CONT_RING_COUNTER_EN	BIT(27)
+#define SARADC_REG3_CTRL_SAMPLING_CLOCK_PHASE	BIT(26)
+#define SARADC_REG3_CTRL_CHAN7_MUX_SEL_MASK	GENMASK(25, 23)
+#define SARADC_REG3_CTRL_CHAN7_MUX_SEL_SHIFT	23
+#define SARADC_REG3_ADC_EN			BIT(21)
+#define SARADC_REG3_BLOCK_DLY_SEL_MASK		GENMASK(9, 8)
+#define SARADC_REG3_BLOCK_DLY_MASK		GENMASK(7, 0)
+
+#define SARADC_DELAY				0x10
+#define SARADC_DELAY_INPUT_DLY_SEL_MASK		GENMASK(25, 24)
+#define SARADC_DELAY_INPUT_DLY_CNT_MASK		GENMASK(23, 16)
+#define SARADC_DELAY_BUSY_KERNEL		BIT(14)
+#define SARADC_DELAY_BUSY_BL30			BIT(15)
+#define SARADC_DELAY_SAMPLE_DLY_SEL_MASK	GENMASK(9, 8)
+#define SARADC_DELAY_SAMPLE_DLY_CNT_MASK	GENMASK(7, 0)
+
+#define SARADC_LAST_RD				0x14
+
+#define SARADC_FIFO_RD				0x18
+#define SARADC_FIFO_RD_CHAN_ID_SHIFT		(12)
+#define SARADC_FIFO_RD_CHAN_ID_MASK		GENMASK(14, 12)
+#define SARADC_FIFO_RD_SAMPLE_VALUE_MASK	GENMASK(11, 0)
+
+#define SARADC_AUX_SW				0x1c
+#define SARADC_AUX_SW_MUX_SEL_CHAN_MASK(_chan)		\
+					(GENMASK(10, 8) << (((_chan) - 2) * 3))
+
+#define SARADC_CHAN_10_SW			0x20
+#define SARADC_CHAN_10_SW_CHAN1_MUX_SEL_MASK	GENMASK(25, 23)
+#define SARADC_CHAN_10_SW_CHAN0_MUX_SEL_MASK	GENMASK(9, 7)
+
+#define SARADC_DETECT_IDLE_SW			0x24
+#define SARADC_DETECT_IDLE_SW_DETECT_SW_EN	BIT(26)
+#define SARADC_DETECT_IDLE_SW_DETECT_MUX_MASK	GENMASK(25, 23)
+#define SARADC_DETECT_IDLE_SW_IDLE_MUX_SEL_MASK GENMASK(9, 7)
+
+#define SARADC_DELTA_10				0x28
+
+#define SARADC_REG11				0x2c
+#define SARADC_REG11_VREF_SEL			BIT(0)
+#define SARADC_REG11_EOC			BIT(1)
+#define SARADC_REG11_VREF_EN			BIT(5)
+#define SARADC_REG11_CMV_SEL			BIT(6)
+#define SARADC_REG11_BANDGAP_EN			BIT(13)
+
+#define SARADC_REG13				0x34
+
+static void vAdcHandlerISR(void);
+
+static uint32_t SaradcRegBackup[SARADC_REG_NUM] = {0};
+
+const char *const ch7Vol[] = {
+	"gnd",
+	"vdd/4",
+	"vdd/2",
+	"vdd*3/4",
+	"vdd",
+};
+
+static SemaphoreHandle_t adcSemaphoreMutex;
+static SemaphoreHandle_t adcSemaphoreBinary;
+
+void vBackupSaradcReg(void)
+{
+	uint8_t ucIndex;
+	for (ucIndex = 0; ucIndex < (SARADC_REG_NUM - 1); ucIndex++) {
+		SaradcRegBackup[ucIndex] =
+			REG32((unsigned long)P_SARADC(SARADC_REG0)
+						+ 0x04 * ucIndex);
+	}
+
+	/* saradc clock reg */
+	SaradcRegBackup[SARADC_REG_NUM - 1] = REG32((unsigned long)SAR_CLK_BASE);
+}
+
+void vRestoreSaradcReg(void)
+{
+	uint8_t ucIndex;
+	for (ucIndex = 0; ucIndex < (SARADC_REG_NUM - 1); ucIndex++)
+		REG32((unsigned long)(P_SARADC(SARADC_REG0) + 0x04 * ucIndex))
+						= SaradcRegBackup[ucIndex];
+
+	/* saradc clock reg */
+	REG32((unsigned long)SAR_CLK_BASE) = SaradcRegBackup[SARADC_REG_NUM - 1];
+}
+
+void vAdcInit(enum AdcSampleMode mode)
+{
+	vBackupSaradcReg();
+
+	/* create association between logic and physical channel */
+	REG32(P_SARADC(SARADC_AUX_SW)) = 0x03eb1a0c;
+	REG32(P_SARADC(SARADC_CHAN_10_SW)) = 0x008c000c;
+
+	/* disable all channels by default */
+	REG32(P_SARADC(SARADC_CHAN_LIST)) = 0x00000000;
+
+	/* delay between two input/samples = (10 + 1) * 1us */
+	REG32(P_SARADC(SARADC_DELAY)) = 0x010a000a;
+
+	/*
+	 * BIT[21]:    disable the ADC by default
+	 * BIT[23-25]: vdda*3/4 connect to channel-7 by default
+	 * BIT[26]:    select the sampling clock period: 0:3T, 1:5T
+	 * BIT[27]:    disable ring counter
+         * BIT[28]:    (sync flag) bl30 configures sampling delay and clock
+         *             instead of kernel
+         * BIT[31]:    use the clk domain to add delay to
+         *             the start convert signal for hold times
+         */
+        REG32(P_SARADC(SARADC_REG3)) = 0x8980000a;
+#if SARADC_SUPPORT_ALWAYS_ON
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG3), SARADC_REG3_BL30_INTEGRATION,
+                          SARADC_REG3_BL30_INTEGRATION);
+#endif
+
+	/* select VDDA as reference voltage */
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG11),
+			  SARADC_REG11_VREF_SEL, SARADC_REG11_VREF_SEL);
+
+	/* clock initialization: 1.2M=24M/(0x13 + 1) */
+	REG32_UPDATE_BITS(SAR_CLK_BASE, SAR_CLK_DIV_MASK,
+			  0x13 << SAR_CLK_DIV_SHIFT);
+
+	/* create mutex semaphore */
+	adcSemaphoreMutex = xSemaphoreCreateMutex();
+	configASSERT(adcSemaphoreMutex != NULL);
+
+	if (mode == SAMPLE_MODE_INT) {
+		/* create binary semaphore */
+		adcSemaphoreBinary = xSemaphoreCreateBinary();
+		configASSERT(adcSemaphoreBinary != NULL);
+
+		/* interrupt initialization */
+		RegisterIrq(SARADC_INTERRUPT_NUM, 1, vAdcHandlerISR);
+		EnableIrq(SARADC_INTERRUPT_NUM);
+	}
+}
+
+void vAdcDeinit(enum AdcSampleMode mode)
+{
+	if (mode == SAMPLE_MODE_INT) {
+		DisableIrq(SARADC_INTERRUPT_NUM);
+		UnRegisterIrq(SARADC_INTERRUPT_NUM);
+
+		vSemaphoreDelete(adcSemaphoreBinary);
+	}
+
+	vSemaphoreDelete(adcSemaphoreMutex);
+
+	vRestoreSaradcReg();
+}
+
+void vAdcHwEnable(void)
+{
+	xSemaphoreTake(adcSemaphoreMutex, portMAX_DELAY);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG11),
+			  SARADC_REG11_CMV_SEL |
+			  SARADC_REG11_VREF_EN |
+			  SARADC_REG11_EOC |
+			  SARADC_REG11_BANDGAP_EN,
+			  (REG11_CMV_SEL_VALUE ? SARADC_REG11_CMV_SEL : 0) |
+			  (REG11_VREF_EN_VALUE ? SARADC_REG11_VREF_EN : 0) |
+			  (REG11_EOC_VALUE ? SARADC_REG11_EOC : 0) |
+			  SARADC_REG11_BANDGAP_EN);
+
+	REG32_UPDATE_BITS(SAR_CLK_BASE, SAR_CLK_GATE, SAR_CLK_GATE);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+			  SARADC_REG0_SAMPLE_ENGINE_ENABLE,
+			  SARADC_REG0_SAMPLE_ENGINE_ENABLE);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG3),
+			  SARADC_REG3_ADC_EN, SARADC_REG3_ADC_EN);
+
+	xSemaphoreGive(adcSemaphoreMutex);
+}
+
+void vAdcHwDisable(void)
+{
+	xSemaphoreTake(adcSemaphoreMutex, portMAX_DELAY);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG3), SARADC_REG3_ADC_EN, 0);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+			  SARADC_REG0_SAMPLE_ENGINE_ENABLE, 0);
+
+	REG32_UPDATE_BITS(SAR_CLK_BASE, SAR_CLK_GATE, 0);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG11), SARADC_REG11_BANDGAP_EN, 0);
+
+	xSemaphoreGive(adcSemaphoreMutex);
+}
+
+static inline BaseType_t vAdcWaitBusyClear(void)
+{
+	int32_t timeout = 1000;
+
+	do {
+		udelay(1);
+	} while ((REG32(P_SARADC(SARADC_REG0)) & SARADC_REG0_BUSY_MASK) &&
+		 timeout--);
+
+	if (timeout < 0)
+		return pdFALSE;
+	else
+		return pdTRUE;
+}
+
+static inline void prvAdcClearFifo(void)
+{
+	uint16_t i;
+
+	for (i = 0; i < 32; i++) {
+		if (!((REG32(P_SARADC(SARADC_REG0)) >>
+		       SARADC_REG0_FIFO_COUNT_SHIFT) & 0x1f))
+			break;
+
+		REG32(P_SARADC(SARADC_FIFO_RD));
+	}
+}
+
+static inline void prvAdcEnableChannel(enum AdcChannelType ch, uint8_t idx)
+{
+	REG32_UPDATE_BITS(P_SARADC(SARADC_CHAN_LIST),
+			  SARADC_CHAN_LIST_MAX_INDEX_MASK,
+			  idx << SARADC_CHAN_LIST_MAX_INDEX_SHIFT);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_CHAN_LIST),
+			  SARADC_CHAN_LIST_ENTRY_MASK(idx),
+			  ch << SARADC_CHAN_LIST_ENTRY_SHIFT(idx));
+}
+
+static inline void prvAdcStartSample(enum AdcSampleMode mode)
+{
+	if (mode == SAMPLE_MODE_POLL) {
+		/* in kernel and uboot-2015, saradc driver wills disable them
+		 * after every single-shot sample, so enable them again over
+		 * here.
+		 */
+		REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+				  SARADC_REG0_SAMPLING_STOP |
+				  SARADC_REG0_SAMPLE_ENGINE_ENABLE,
+				  SARADC_REG0_SAMPLE_ENGINE_ENABLE);
+
+		REG32_UPDATE_BITS(P_SARADC(SARADC_REG3),
+				  SARADC_REG3_ADC_EN, SARADC_REG3_ADC_EN);
+
+		REG32_UPDATE_BITS(SAR_CLK_BASE, SAR_CLK_GATE, SAR_CLK_GATE);
+	} else {
+		REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+				  SARADC_REG0_FIFO_IRQ_EN |
+				  SARADC_REG0_SAMPLING_STOP,
+				  SARADC_REG0_FIFO_IRQ_EN);
+	}
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+			  SARADC_REG0_SAMPLING_START,
+			  SARADC_REG0_SAMPLING_START);
+}
+
+static inline void prvAdcStopSample(enum AdcSampleMode mode)
+{
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG0), SARADC_REG0_SAMPLING_START, 0);
+
+	if (mode == SAMPLE_MODE_POLL)
+		REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+				  SARADC_REG0_SAMPLING_STOP,
+				  SARADC_REG0_SAMPLING_STOP);
+	else
+		REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+				  SARADC_REG0_SAMPLING_STOP |
+				  SARADC_REG0_FIFO_IRQ_EN,
+				  SARADC_REG0_SAMPLING_STOP);
+}
+
+static inline void prvAdcSetAvgMode(enum AdcChannelType ch,
+				    enum AdcAvgMode mode)
+{
+	if (mode == MEDIAN_AVERAGING)
+		REG32_UPDATE_BITS(P_SARADC(SARADC_AVG_CNTL),
+				  SARADC_AVG_CNTL_NUM_SAMPLES_MASK(ch),
+				  EIGHT_SAMPLES <<
+				  SARADC_AVG_CNTL_NUM_SAMPLES_SHIFT(ch));
+	else if (mode == MEAN_AVERAGING)
+		REG32_UPDATE_BITS(P_SARADC(SARADC_AVG_CNTL),
+				  SARADC_AVG_CNTL_NUM_SAMPLES_MASK(ch),
+				  FOUR_SAMPLES <<
+				  SARADC_AVG_CNTL_NUM_SAMPLES_SHIFT(ch));
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_AVG_CNTL),
+			  SARADC_AVG_CNTL_AVG_MODE_MASK(ch),
+			  mode << SARADC_AVG_CNTL_AVG_MODE_SHIFT(ch));
+}
+
+static inline void prvAdcUpdateIntThresh(uint8_t thresh)
+{
+	configASSERT(thresh <= SARADC_MAX_FIFO_SIZE);
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+			  SARADC_REG0_CONTINUOUS_EN,
+			  ((thresh == 1) ? 0 : SARADC_REG0_CONTINUOUS_EN));
+
+	REG32_UPDATE_BITS(P_SARADC(SARADC_REG0),
+			  SARADC_REG0_FIFO_CNT_IRQ_MASK,
+			  thresh << SARADC_REG0_FIFO_CNT_IRQ_SHIFT);
+}
+
+static inline int32_t prvAdcCompeteWithKernel(void)
+{
+	int32_t count;
+
+	for (count = 0; count <= 10000; count++) {
+		if (count == 10000) {
+			REG32_UPDATE_BITS(P_SARADC(SARADC_DELAY),
+					  SARADC_DELAY_BUSY_BL30, 0);
+			asm volatile("fence.i; fence rw,rw;");
+			return -pdFREERTOS_ERRNO_EBUSY;
+		}
+
+		if (!(REG32(P_SARADC(SARADC_DELAY)) &
+					SARADC_DELAY_BUSY_KERNEL)) {
+			REG32_UPDATE_BITS(P_SARADC(SARADC_DELAY),
+					  SARADC_DELAY_BUSY_BL30,
+					  SARADC_DELAY_BUSY_BL30);
+			asm volatile("fence.i; fence rw,rw;");
+			udelay(10);
+
+			if ((REG32(P_SARADC(SARADC_DELAY)) &
+						SARADC_DELAY_BUSY_KERNEL)) {
+				REG32_UPDATE_BITS(P_SARADC(SARADC_DELAY),
+					  SARADC_DELAY_BUSY_BL30, 0);
+				asm volatile("fence.i; fence rw,rw;");
+				udelay(100);
+				continue;
+			} else {
+				if (REG32(P_SARADC(SARADC_DELAY)) &
+							SARADC_DELAY_BUSY_BL30)
+					break;
+				else
+					continue;
+			}
+		} else {
+			udelay(4);
+		}
+	}
+
+	return 0;
+}
+
+static int32_t prvAdcReadRawSample(uint16_t *data, uint16_t datNum,
+				   AdcInstanceConfig_t *conf,
+				   enum AdcSampleMode mode)
+{
+	uint8_t fifo_ch;
+	uint16_t count = 0;
+	uint32_t rVal;
+	BaseType_t ret;
+
+	if (mode == SAMPLE_MODE_INT) {
+		ret = xSemaphoreTake(adcSemaphoreBinary,     /* timeout 100ms */
+				     100 / portTICK_PERIOD_MS);
+	} else {
+		ret = vAdcWaitBusyClear();
+		prvAdcStopSample(mode);
+	}
+
+	if (ret == pdTRUE) {
+		while ((REG32(P_SARADC(SARADC_REG0)) >>
+			SARADC_REG0_FIFO_COUNT_SHIFT) & 0x1f) {
+			if (count >= conf->number || count >= datNum
+			    || count >= SARADC_MAX_FIFO_SIZE)
+				break;
+
+			rVal = REG32(P_SARADC(SARADC_FIFO_RD));
+
+			fifo_ch = (rVal >> SARADC_FIFO_RD_CHAN_ID_SHIFT) & 0x7;
+
+			if (fifo_ch != conf->channel)
+				return -pdFREERTOS_ERRNO_EINVAL;
+
+			data[count] = rVal & 0xfff;
+
+			count++;
+		}
+	} else {
+		prvAdcStopSample(mode);
+		return -pdFREERTOS_ERRNO_ETIMEDOUT;
+	}
+
+	return count;
+}
+
+static void vAdcHandlerISR(void)
+{
+	BaseType_t reschedule = pdFALSE;
+
+	/* stop sampling before reading the data */
+	prvAdcStopSample(SAMPLE_MODE_INT);
+
+	xSemaphoreGiveFromISR(adcSemaphoreBinary, &reschedule);
+
+	portYIELD_FROM_ISR(reschedule);
+}
+
+int32_t xAdcGetSample(uint16_t *data, uint16_t datNum,
+		      AdcInstanceConfig_t *conf, enum AdcSampleMode mode)
+{
+	int32_t ret;
+
+	xSemaphoreTake(adcSemaphoreMutex, portMAX_DELAY);
+
+	if (mode == SAMPLE_MODE_POLL) {
+		ret = prvAdcCompeteWithKernel();
+		if (ret < 0)
+			goto err;
+	} else {
+		prvAdcUpdateIntThresh(conf->number);
+	}
+
+	prvAdcClearFifo();
+
+	prvAdcEnableChannel(conf->channel, 0);
+
+	prvAdcSetAvgMode(conf->channel, conf->avgMode);
+
+	prvAdcStartSample(mode);
+
+	ret = prvAdcReadRawSample(data, datNum, conf, mode);
+err:
+	if (mode == SAMPLE_MODE_POLL)
+		REG32_UPDATE_BITS(P_SARADC(SARADC_DELAY),	/* release bl30 busy bit */
+				  SARADC_DELAY_BUSY_BL30, 0);
+
+	xSemaphoreGive(adcSemaphoreMutex);
+
+	if (ret <= 0) {
+		iprintf("%s: faild to read sample for channel %d: %d\n",
+			SARADC_DRV_NAME, conf->channel, ret);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+
+	return ret;
+}
+
+void vAdcSelfTest(void)
+{
+	int32_t ret;
+	uint32_t i;
+	uint16_t adcData[1];
+	AdcInstanceConfig_t adcConfig = { SARADC_CH7, NO_AVERAGING, 1 };
+
+	vAdcHwEnable();
+
+	for (i = 0; i < ARRAY_SIZE(ch7Vol); i++) {
+		REG32_UPDATE_BITS(P_SARADC(SARADC_REG3),
+				  SARADC_REG3_CTRL_CHAN7_MUX_SEL_MASK,
+				  i << SARADC_REG3_CTRL_CHAN7_MUX_SEL_SHIFT);
+
+		ret = xAdcGetSample(adcData, 1, &adcConfig, SAMPLE_MODE_INT);
+		if (ret <= 0)
+			return;
+
+		iprintf("%-8s: %d\n", ch7Vol[i], adcData[0]);
+	}
+
+	vAdcHwDisable();
+}
