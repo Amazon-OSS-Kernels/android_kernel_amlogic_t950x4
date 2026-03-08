@@ -924,14 +924,12 @@ scanSearchExistingBssDescWithSsid(IN struct ADAPTER *prAdapter,
 	switch (eBSSType) {
 	case BSS_TYPE_P2P_DEVICE:
 		fgCheckSsid = FALSE;
-		/* fall through */
-		/* FALLTHRU */
+		kal_fallthrough;
 	case BSS_TYPE_INFRASTRUCTURE:
 #if CFG_SUPPORT_ROAMING_SKIP_ONE_AP
 		scanSearchBssDescOfRoamSsid(prAdapter);
-		/* fall through */
 #endif
-		/* FALLTHRU */
+		kal_fallthrough;
 	case BSS_TYPE_BOW_DEVICE:
 		prBssDesc = scanSearchBssDescByBssidAndSsid(prAdapter,
 			aucBSSID, fgCheckSsid, prSsid);
@@ -1555,8 +1553,8 @@ struct BSS_DESC *scanAddToBssDesc(IN struct ADAPTER *prAdapter,
 	struct WLAN_BEACON_FRAME *prWlanBeaconFrame
 		= (struct WLAN_BEACON_FRAME *) NULL;
 	struct IE_SSID *prIeSsid = (struct IE_SSID *) NULL;
-	struct IE_SUPPORTED_RATE *prIeSupportedRate
-		= (struct IE_SUPPORTED_RATE *) NULL;
+	struct IE_SUPPORTED_RATE_IOT *prIeSupportedRate
+		= (struct IE_SUPPORTED_RATE_IOT *) NULL;
 	struct IE_EXT_SUPPORTED_RATE *prIeExtSupportedRate
 		= (struct IE_EXT_SUPPORTED_RATE *) NULL;
 	uint8_t ucHwChannelNum = 0;
@@ -2013,7 +2011,7 @@ struct BSS_DESC *scanAddToBssDesc(IN struct ADAPTER *prAdapter,
 			 */
 			if ((!prIeSupportedRate)
 				&& (IE_LEN(pucIE) <= RATE_NUM_SW))
-				prIeSupportedRate = SUP_RATES_IE(pucIE);
+				prIeSupportedRate = SUP_RATES_IOT_IE(pucIE);
 			break;
 
 		case ELEM_ID_TIM:
@@ -2657,9 +2655,11 @@ uint32_t scanAddScanResult(IN struct ADAPTER *prAdapter,
 
 	prWlanBeaconFrame = (struct WLAN_BEACON_FRAME *) prSwRfb->pvHeader;
 	COPY_MAC_ADDR(rMacAddr, prWlanBeaconFrame->aucBSSID);
+	memset(&rSsid, 0, sizeof(struct PARAM_SSID));
 	COPY_SSID(rSsid.aucSsid, rSsid.u4SsidLen,
 		prBssDesc->aucSSID, prBssDesc->ucSSIDLen);
 
+	memset(&rConfiguration, 0, sizeof(struct PARAM_802_11_CONFIG));
 	rConfiguration.u4Length = sizeof(struct PARAM_802_11_CONFIG);
 	rConfiguration.u4BeaconPeriod
 		= (uint32_t) prWlanBeaconFrame->u2BeaconInterval;
@@ -2801,11 +2801,14 @@ uint32_t scanProcessBeaconAndProbeResp(IN struct ADAPTER *prAdapter,
 
 	prScanInfo = &(prAdapter->rWifiVar.rScanInfo);
 
-	/* 4 <0> Ignore invalid Beacon Frame */
-	if ((prSwRfb->u2PacketLen - prSwRfb->u2HeaderLen) <
+	/* 4 <0> Ignore invalid Beacon or Probe Response Frame */
+	if (prSwRfb->u2PacketLen < prSwRfb->u2HeaderLen ||
+		(prSwRfb->u2PacketLen - prSwRfb->u2HeaderLen) <
 		(TIMESTAMP_FIELD_LEN + BEACON_INTERVAL_FIELD_LEN
-		+ CAP_INFO_FIELD_LEN)) {
-		log_dbg(SCN, ERROR, "Ignore invalid Beacon Frame\n");
+		+ CAP_INFO_FIELD_LEN) ||
+		prSwRfb->u2HeaderLen != sizeof(struct WLAN_MAC_HEADER)) {
+		log_dbg(SCN, ERROR,
+			"Ignore invalid Beacon or Probe Response\n");
 		return rStatus;
 	}
 

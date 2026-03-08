@@ -5603,6 +5603,7 @@ void mqmProcessAssocRsp(IN struct ADAPTER *prAdapter,
 			case ELEM_ID_QOS_MAP_SET:
 				DBGLOG(QM, WARN,
 					"QM: received assoc resp qosmapset ie\n");
+				QosMapSetRelease(prStaRec);
 				prStaRec->qosMapSet =
 					qosParseQosMapSet(prAdapter, pucIE);
 				hasnoQosMapSetIE = FALSE;
@@ -6185,13 +6186,19 @@ void mqmGenerateWmmInfoIE(IN struct ADAPTER *prAdapter,
 	DEBUGFUNC("mqmGenerateWmmInfoIE");
 
 	ASSERT(prMsduInfo);
+	/* in case assert didn't take effect */
+	if (prMsduInfo == NULL) {
+		DBGLOG(QM, ERROR, "prMsduInfo is NULL\n");
+		return;
+	}
 
 	prStaRec = cnmGetStaRecByIndex(prAdapter,
 		prMsduInfo->ucStaRecIndex);
-	ASSERT(prStaRec);
-
-	if (prStaRec == NULL)
+	if (prStaRec == NULL) {
+		DBGLOG(QM, ERROR, "prStaRec of ucStaRecIndex %d is NULL!\n",
+			prMsduInfo->ucStaRecIndex);
 		return;
+	}
 
 	prBssInfo = GET_BSS_INFO_BY_INDEX(prAdapter,
 		prStaRec->ucBssIndex);

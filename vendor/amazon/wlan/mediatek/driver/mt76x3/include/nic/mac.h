@@ -499,6 +499,21 @@
 #define MAC_FRAME_ACTION                        (MAC_FRAME_TYPE_MGT | 0x00D0)
 #define MAC_FRAME_ACTION_NO_ACK                 (MAC_FRAME_TYPE_MGT | 0x00E0)
 
+#define MASK_MAC_FRAME_ASSOC_REQ                BIT(MAC_FRAME_ASSOC_REQ >> 4)
+#define MASK_MAC_FRAME_ASSOC_RSP                BIT(MAC_FRAME_ASSOC_RSP >> 4)
+#define MASK_MAC_FRAME_REASSOC_REQ              BIT(MAC_FRAME_REASSOC_REQ >> 4)
+#define MASK_MAC_FRAME_REASSOC_RSP              BIT(MAC_FRAME_REASSOC_RSP >> 4)
+#define MASK_MAC_FRAME_PROBE_REQ                BIT(MAC_FRAME_PROBE_REQ >> 4)
+#define MASK_MAC_FRAME_PROBE_RSP                BIT(MAC_FRAME_PROBE_RSP >> 4)
+#define MASK_MAC_FRAME_BEACON                   BIT(MAC_FRAME_BEACON >> 4)
+#define MASK_MAC_FRAME_ATIM                     BIT(MAC_FRAME_ATIM >> 4)
+#define MASK_MAC_FRAME_DISASSOC                 BIT(MAC_FRAME_DISASSOC >> 4)
+#define MASK_MAC_FRAME_AUTH                     BIT(MAC_FRAME_AUTH >> 4)
+#define MASK_MAC_FRAME_DEAUTH                   BIT(MAC_FRAME_DEAUTH >> 4)
+#define MASK_MAC_FRAME_ACTION                   BIT(MAC_FRAME_ACTION >> 4)
+#define MASK_MAC_FRAME_ACTION_NO_ACK \
+	BIT(MAC_FRAME_ACTION_NO_ACK >> 4)
+
 #define MAC_FRAME_CONTRL_WRAPPER                (MAC_FRAME_TYPE_CTRL | 0x0070)
 #define MAC_FRAME_BLOCK_ACK_REQ                 (MAC_FRAME_TYPE_CTRL | 0x0080)
 #define MAC_FRAME_BLOCK_ACK                     (MAC_FRAME_TYPE_CTRL | 0x0090)
@@ -1062,6 +1077,8 @@
 /* 7.3.2.2 Supported Rates */
 #define ELEM_MAX_LEN_SUP_RATES                      8
 
+#define ELEM_MAX_LEN_SUP_RATES_IOT                  16
+
 /* 7.3.2.4 DS Parameter Set */
 #define ELEM_MAX_LEN_DS_PARAMETER_SET               1
 
@@ -1330,6 +1347,9 @@
 #define VHT_OP_MODE_CHANNEL_WIDTH                   BITS(0, 1)
 #define VHT_OP_MODE_RX_NSS                          BITS(4, 6)
 #define VHT_OP_MODE_RX_NSS_TYPE                     BIT(7)
+
+#define VHT_OP_MODE_NSS_1    0x00
+#define VHT_OP_MODE_NSS_2    0x01
 
 #define VHT_OP_MODE_CHANNEL_WIDTH_OFFSET                   0
 #define VHT_OP_MODE_RX_NSS_OFFSET                   4
@@ -2009,6 +2029,13 @@ struct IE_SUPPORTED_RATE {
 	uint8_t aucSupportedRates[ELEM_MAX_LEN_SUP_RATES];
 } __KAL_ATTRIB_PACKED__;
 
+/* Some IOT AP will carry Rates > 8*/
+struct IE_SUPPORTED_RATE_IOT {
+	uint8_t ucId;
+	uint8_t ucLength;
+	uint8_t aucSupportedRates[ELEM_MAX_LEN_SUP_RATES_IOT];
+} __KAL_ATTRIB_PACKED__;
+
 /* 7.3.2.4 DS Parameter Set element */
 struct IE_DS_PARAM_SET {
 	uint8_t ucId;
@@ -2224,7 +2251,8 @@ struct ACTION_NEIGHBOR_REPORT_FRAME {
 struct SUB_ELEMENT {
 	uint8_t ucSubID;
 	uint8_t ucLength;
-	uint8_t aucOptInfo[1];
+	/* variable length */
+	uint8_t aucOptInfo[];
 } __KAL_ATTRIB_PACKED__;
 
 struct SM_BASIC_REQ {
@@ -3273,6 +3301,8 @@ struct WMM_ACTION_TSPEC_FRAME {
 #define SSID_IE(fp)             ((struct IE_SSID *) fp)
 
 #define SUP_RATES_IE(fp)        ((struct IE_SUPPORTED_RATE *) fp)
+
+#define SUP_RATES_IOT_IE(fp)    ((struct IE_SUPPORTED_RATE_IOT *) fp)
 
 #define DS_PARAM_IE(fp)         ((struct IE_DS_PARAM_SET *) fp)
 

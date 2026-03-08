@@ -2089,7 +2089,7 @@ void nicRxProcessDataPacket(IN struct ADAPTER *prAdapter,
 				((uint8_t *)prSwRfb->pvHeader +
 				2 * MAC_ADDR_LEN);
 
-		DBGLOG(RSN, INFO,
+		DBGLOG_LIMITED(RSN, INFO,
 			"HAL_RX_STATUS_IS_CIPHER_MISMATCH, htr:%d, HdrLen:%d\n",
 			HAL_RX_STATUS_IS_HEADER_TRAN(prRxStatus),
 			HAL_RX_STATUS_GET_HEADER_LEN(prRxStatus)
@@ -2106,7 +2106,7 @@ void nicRxProcessDataPacket(IN struct ADAPTER *prAdapter,
 				"Don't drop eapol or wpi packet\n");
 		} else {
 			fgDrop = TRUE;
-			DBGLOG(RSN, INFO,
+			DBGLOG_LIMITED(RSN, INFO,
 				"Drop plain text during security connection\n");
 		}
 	}
@@ -3693,6 +3693,17 @@ void nicRxProcessMgmtPacket(IN struct ADAPTER *prAdapter,
 			__func__);
 		nicRxReturnRFB(prAdapter, prSwRfb);
 		RX_INC_CNT(&prAdapter->rRxCtrl, RX_DROP_TOTAL_COUNT);
+		return;
+	}
+
+	if (prSwRfb->u2HeaderLen < sizeof(struct WLAN_MAC_HEADER) ||
+		prSwRfb->u2PacketLen < prSwRfb->u2HeaderLen ||
+		prSwRfb->u2PacketLen > RX_GET_PACKET_MAX_SIZE(prAdapter)) {
+		DBGLOG(RX, WARN,
+			"Mgmt packet length check fail! length[H,P]:%u,%u\n",
+			prSwRfb->u2HeaderLen, prSwRfb->u2PacketLen);
+		RX_INC_CNT(&prAdapter->rRxCtrl, RX_DROP_TOTAL_COUNT);
+		nicRxReturnRFB(prAdapter, prSwRfb);
 		return;
 	}
 

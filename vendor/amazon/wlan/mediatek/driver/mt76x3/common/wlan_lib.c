@@ -131,6 +131,8 @@ static const u_int16_t FELossOffset[MAX_ANTENNA_NUM][FELOSS_CH_GROUP_NUM] = {
 	(((_sValue) & BIT((n)-1)) ? ((_sValue) | BITS(n, 31)) : \
 	 ((_sValue) & ~BITS(n, 31)))
 
+#define COUNTRY_CODE_LENGTH 2
+
 /* TODO: Check */
 /* OID set handlers without the need to access HW register */
 PFN_OID_HANDLER_FUNC apfnOidSetHandlerWOHwAccess[] = {
@@ -857,9 +859,9 @@ uint32_t wlanAdapterStart(IN struct ADAPTER *prAdapter,
 			nicTxRelease(prAdapter, FALSE);
 			/* System Service Uninitialization */
 			nicUninitSystemService(prAdapter);
-		/* fallthrough */
+			kal_fallthrough;
 		case INIT_ADAPTER_FAIL:
-		/* fallthrough */
+			kal_fallthrough;
 		case DRIVER_OWN_FAIL:
 			nicReleaseAdapterMemory(prAdapter);
 			break;
@@ -1634,9 +1636,13 @@ uint32_t wlanTxCmdMthread(IN struct ADAPTER *prAdapter)
 			struct WIFI_CMD *prWifiCmd =
 			(struct WIFI_CMD *) prCmdInfo->pucInfoBuffer;
 
-			DBGLOG(INIT, ERROR,
-				"RETRY[%d] TX CMD: ID[0x%02X] SEQ[%u] CMD cannot send\n",
-			tx_retry_cnt, prWifiCmd->ucCID, prWifiCmd->ucSeqNum);
+			if (prWifiCmd == NULL) {
+                                DBGLOG(INIT, ERROR, "CMD cannot send, pcInfoBuffer is NULL\n");
+                        } else {
+                                DBGLOG(INIT, ERROR,
+				        "RETRY[%d] TX CMD: ID[0x%02X] SEQ[%u] CMD cannot send\n",
+			                tx_retry_cnt, prWifiCmd->ucCID, prWifiCmd->ucSeqNum);
+                        }
 			tx_retry_cnt = 0;
 		}
 #else
@@ -1664,8 +1670,12 @@ uint32_t wlanTxCmdMthread(IN struct ADAPTER *prAdapter)
 			struct WIFI_CMD *prWifiCmd =
 			(struct WIFI_CMD *) prCmdInfo->pucInfoBuffer;
 
-			DBGLOG(INIT, STATE, "RETRY[%d] TX CMD: ID[0x%02X] SEQ[%u]\n",
-				tx_retry_cnt, prWifiCmd->ucCID, prWifiCmd->ucSeqNum);
+			if (prWifiCmd == NULL) {
+                                DBGLOG(INIT, ERROR, "RETRY done, pucInfoBuffer is NULL\n");
+                        } else {
+                                DBGLOG(INIT, STATE, "RETRY[%d] TX CMD: ID[0x%02X] SEQ[%u]\n",
+				        tx_retry_cnt, prWifiCmd->ucCID, prWifiCmd->ucSeqNum);
+                        }
 		}
 		tx_retry_cnt = 0;
 #endif
@@ -3617,7 +3627,7 @@ u_int8_t wlanProcessSecurityFrame(IN struct ADAPTER
 	struct STA_RECORD *prStaRec;
 	uint8_t ucBssIndex;
 	uint32_t u4PacketLen;
-	uint8_t aucEthDestAddr[PARAM_MAC_ADDR_LEN];
+	uint8_t aucEthDestAddr[PARAM_MAC_ADDR_LEN] = {0};
 	struct MSDU_INFO *prMsduInfo;
 	uint8_t ucStaRecIndex;
 
@@ -5543,6 +5553,8 @@ wlanQueryStaStatistics(IN struct ADAPTER *prAdapter,
 
 	if (prAdapter->fgIsEnableLpdvt)
 		return WLAN_STATUS_NOT_SUPPORTED;
+	memset(&rQueryCmdStaStatistics, 0,
+		sizeof(struct CMD_GET_STA_STATISTICS));
 
 	do {
 		ASSERT(pvQueryBuffer);
@@ -7127,14 +7139,28 @@ void wlanCfgSetDebugLevel(IN struct ADAPTER *prAdapter)
 
 void wlanCfgSetCountryCode(IN struct ADAPTER *prAdapter)
 {
-	int8_t aucValue[WLAN_CFG_VALUE_LEN_MAX];
+	uint8_t aucValue[WLAN_CFG_VALUE_LEN_MAX] = {0};
+	uint8_t ucCountry[COUNTRY_CODE_LENGTH] = {0};
+	uint8_t ucOffset = 0;
 
 	/* Apply COUNTRY Config */
 	if (wlanCfgGet(prAdapter, "Country", aucValue, "",
 		       0) == WLAN_STATUS_SUCCESS) {
+
+		for (ucOffset = 0;ucOffset < COUNTRY_CODE_LENGTH; ucOffset++) {
+			/* not alpha and not 0 */
+			if (!(((aucValue[ucOffset] >= 'a') && (aucValue[ucOffset] <= 'z')) ||
+				((aucValue[ucOffset] >= 'A') && (aucValue[ucOffset] <= 'Z')) ||
+				(aucValue[ucOffset] == '0'))) {
+				DBGLOG(INIT, TRACE, "invalid country code\n");
+				return;
+			}
+		}
+
+		kalMemCopy(ucCountry, aucValue, COUNTRY_CODE_LENGTH);
 		prAdapter->rWifiVar.rConnSettings.u2CountryCode =
-			(((uint16_t) aucValue[0]) << 8) |
-			((uint16_t) aucValue[1]);
+			(((uint16_t) ucCountry[0]) << 8) |
+			((uint16_t) ucCountry[1]);
 
 		DBGLOG(INIT, INFO, "u2CountryCode=0x%04x\n",
 		       prAdapter->rWifiVar.rConnSettings.u2CountryCode);
@@ -7255,13 +7281,16 @@ uint32_t wlanCfgGet(IN struct ADAPTER *prAdapter,
 	prWlanCfgEntry = wlanCfgGetEntry(prAdapter, pucKey, FALSE);
 
 	if (prWlanCfgEntry) {
-		kalMemCopy(pucValue, prWlanCfgEntry->aucValue,
+		kalStrnCpy(pucValue, prWlanCfgEntry->aucValue,
 			   WLAN_CFG_VALUE_LEN_MAX - 1);
+		pucValue[WLAN_CFG_VALUE_LEN_MAX - 1] = '\0';
 		return WLAN_STATUS_SUCCESS;
 	}
-	if (pucValueDef)
-		kalMemCopy(pucValue, pucValueDef,
+	if (pucValueDef) {
+		kalStrnCpy(pucValue, pucValueDef,
 			   WLAN_CFG_VALUE_LEN_MAX - 1);
+		pucValue[WLAN_CFG_VALUE_LEN_MAX - 1] = '\0';
+	}
 	return WLAN_STATUS_FAILURE;
 
 
@@ -7614,7 +7643,7 @@ textresume:
 					x++;
 					continue;
 				}
-				/* FALLTHRU */
+				kal_fallthrough;
 			case '\n':
 				/* \ <lf> -> line continuation */
 				x++;
@@ -9336,6 +9365,66 @@ wlanSetWakeTbttMdtim(struct GLUE_INFO *prGlueInfo)
 }
 #endif
 
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+void
+wlanSetDhcpOffloadInfo(struct GLUE_INFO *prGlueInfo,
+		       struct net_device *prDev, bool fgSuspend)
+{
+	uint32_t rStatus;
+	uint32_t u4SetInfoLen;
+	uint8_t ucBssIdx;
+	bool fgOffload = FALSE;
+	struct BSS_INFO *prBssInfo;
+	struct NETDEV_PRIVATE_GLUE_INFO *prNetDevPrivate = (struct NETDEV_PRIVATE_GLUE_INFO *) NULL;
+	struct CMD_DHCP_OFFLOAD_SETTING rDhcpSetCmd;
+
+	kalMemZero(&rDhcpSetCmd, sizeof(struct CMD_DHCP_OFFLOAD_SETTING));
+
+	prNetDevPrivate = (struct NETDEV_PRIVATE_GLUE_INFO *) netdev_priv(prDev);
+
+	if (prNetDevPrivate->prGlueInfo != prGlueInfo)
+		DBGLOG(REQ, WARN, "%s: unexpected prGlueInfo(0x%p)!\n", __func__, prNetDevPrivate->prGlueInfo);
+
+	ucBssIdx = prNetDevPrivate->ucBssIdx;
+	prBssInfo = prGlueInfo->prAdapter->aprBssInfo[ucBssIdx];
+
+	/* TODO: Only support AIS for now */
+	if (prGlueInfo->prAdapter->prAisBssInfo->ucBssIndex == ucBssIdx) {
+		if (prBssInfo->fgIsDhcpAcked == TRUE &&
+				prBssInfo->eConnectionState == PARAM_MEDIA_STATE_CONNECTED) {
+			if (fgSuspend)
+				fgOffload = TRUE;
+		}
+	} else {
+		DBGLOG(REQ, ERROR, "%s: BssIdx not matched(%d:%d)!\n", __func__,
+				ucBssIdx, prGlueInfo->prAdapter->prAisBssInfo->ucBssIndex);
+		return;
+	}
+
+	rDhcpSetCmd.ucEnableOffload = fgOffload;
+	rDhcpSetCmd.ucSuspend = fgSuspend;
+	rDhcpSetCmd.ucBssIndex = ucBssIdx;
+	rDhcpSetCmd.u4RenewIntv = prBssInfo->u4DhcpRenewIntv;
+	kalMemCopy(rDhcpSetCmd.aucDhcpServerIpAddr,
+		prBssInfo->aucDhcpServerIpAddr,
+		sizeof(rDhcpSetCmd.aucDhcpServerIpAddr));
+
+    /* When FW receive command, it check connection state to decide apply setting or not */
+	rStatus = kalIoctl(prGlueInfo,
+			   wlanoidSetDhcpOffladInfo,
+			   (void *)&rDhcpSetCmd,
+			   sizeof(rDhcpSetCmd),
+			   FALSE,
+			   FALSE,
+			   TRUE,
+			   &u4SetInfoLen);
+
+	if (rStatus != WLAN_STATUS_SUCCESS)
+		DBGLOG(REQ, WARN, "wlanoidSetDhcpOffladInfo failed\n");
+
+}
+#endif
+
 void
 wlanNotifyFwSuspend(struct GLUE_INFO *prGlueInfo,
 		    struct net_device *prDev, u_int8_t fgSuspend)
@@ -10244,6 +10333,7 @@ wlanWaitCfg80211SuspendDone(struct GLUE_INFO *prGlueInfo)
 		&prGlueInfo->prAdapter->ulSuspendFlag))) {
 		if (u1Count > HIF_SUSPEND_MAX_WAIT_TIME) {
 			DBGLOG(HAL, ERROR, "cfg80211 not suspend\n");
+			aisPreSuspendFlow(prGlueInfo);
 			break;
 		}
 		usleep_range(5000, 6000);
@@ -10567,8 +10657,9 @@ void wlanSuspendPmHandle(struct GLUE_INFO *prGlueInfo)
 	struct RX_BA_ENTRY *prRxBaEntry;
 
 #if CFG_SUPPORT_ADVANCE_CONTROL
-	if (prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap)
-		wlanKeepFullPwr(prGlueInfo->prAdapter, FALSE);
+	prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap |=
+		BLOCK_KEEP_FULL_PWR;
+	wlanKeepFullPwr(prGlueInfo->prAdapter, FALSE);
 #endif
 	/* if cfg EAPOL offload is 0, we set rekey offload when enter wow */
 	if (!prGlueInfo->prAdapter->rWifiVar.ucEapolOffload) {
@@ -10767,8 +10858,8 @@ void wlanResumePmHandle(struct GLUE_INFO *prGlueInfo)
 	}
 #endif
 #if CFG_SUPPORT_ADVANCE_CONTROL
-	if (prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap)
-		wlanKeepFullPwr(prGlueInfo->prAdapter, TRUE);
+	prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap &=
+		~BLOCK_KEEP_FULL_PWR;
 #endif
 
 }
@@ -11201,3 +11292,61 @@ out:
 			   MCS_INFO_SAMPLE_PERIOD);
 }
 #endif
+
+uint32_t wlanSetDisassociate(IN struct ADAPTER *prAdapter,
+			     IN uint8_t ucReasonOfDiconnect) {
+	struct MSG_AIS_ABORT *prAisAbortMsg;
+
+	ASSERT(prAdapter);
+
+	if (prAdapter->rAcpiState == ACPI_STATE_D3) {
+		DBGLOG(REQ, WARN,
+		       "Fail in set disassociate! (Adapter not ready). ACPI=D%d, Radio=%d\n",
+		       prAdapter->rAcpiState, prAdapter->fgIsRadioOff);
+		return WLAN_STATUS_ADAPTER_NOT_READY;
+	}
+
+	/* prepare message to AIS */
+	prAdapter->rWifiVar.rConnSettings.fgIsConnReqIssued = FALSE;
+	prAdapter->rWifiVar.rConnSettings.eReConnectLevel =
+		RECONNECT_LEVEL_USER_SET;
+
+	/* Send AIS Abort Message */
+	prAisAbortMsg = (struct MSG_AIS_ABORT *) cnmMemAlloc(
+						prAdapter, RAM_TYPE_MSG,
+						sizeof(struct MSG_AIS_ABORT));
+	if (!prAisAbortMsg) {
+		DBGLOG(REQ, ERROR, "Fail in creating AisAbortMsg.\n");
+		return WLAN_STATUS_FAILURE;
+	}
+
+	prAisAbortMsg->rMsgHdr.eMsgId = MID_OID_AIS_FSM_JOIN_REQ;
+	prAisAbortMsg->ucReasonOfDisconnect = ucReasonOfDiconnect;
+	prAisAbortMsg->fgDelayIndication = FALSE;
+
+#if CFG_DISCONN_DEBUG_FEATURE
+	/* used to disconnect debug capability */
+	g_rDisconnInfoTemp.ucTrigger = DISCONNECT_TRIGGER_ACTIVE;
+#endif
+
+	mboxSendMsg(prAdapter, MBOX_ID_0,
+		    (struct MSG_HDR *) prAisAbortMsg, MSG_SEND_METHOD_BUF);
+
+	/* indicate for disconnection */
+	if (kalGetMediaStateIndicated(prAdapter->prGlueInfo) ==
+	    PARAM_MEDIA_STATE_CONNECTED) {
+		uint8_t ucBssIdx = 0;
+		ASSERT(prAdapter->prAisBssInfo);
+		ucBssIdx = prAdapter->prAisBssInfo->ucBssIndex;
+		kalIndicateStatusAndComplete(prAdapter->prGlueInfo,
+			     WLAN_STATUS_MEDIA_DISCONNECT_LOCALLY, NULL, 0, ucBssIdx);
+		prAdapter->rWifiVar.rAisFsmInfo.fgIsReqDisconnectPending = TRUE;
+		return WLAN_STATUS_SUCCESS;
+	}
+	else {
+		return WLAN_STATUS_NOT_ACCEPTED;
+	}
+#if !defined(LINUX)
+	prAdapter->fgIsRadioOff = TRUE;
+#endif
+}				/* wlanoidSetDisassociate */

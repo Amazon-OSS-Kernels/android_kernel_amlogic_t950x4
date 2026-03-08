@@ -286,6 +286,7 @@
 #if CFG_SUPPORT_ADVANCE_CONTROL
 #define KEEP_FULL_PWR_TRAFFIC_REPORT_BIT BIT(0)
 #define KEEP_FULL_PWR_NOISE_HISTOGRAM_BIT BIT(1)
+#define BLOCK_KEEP_FULL_PWR BIT(31)
 #endif
 
 #define ED_CCA_BW20_2G_DEFAULT (0)
@@ -1765,6 +1766,12 @@ uint32_t wlanAccessRegisterStatus(IN struct ADAPTER
 
 uint32_t wlanSetChipEcoInfo(IN struct ADAPTER *prAdapter);
 
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+void wlanSetDhcpOffloadInfo(struct GLUE_INFO *prGlueInfo,
+			    struct net_device *prDev,
+			    bool fgSuspend);
+#endif
+
 void wlanNotifyFwSuspend(struct GLUE_INFO *prGlueInfo,
 			 struct net_device *prDev, u_int8_t fgSuspend);
 
@@ -1835,3 +1842,7 @@ uint32_t wlanKeepFullPwr(struct ADAPTER *prAdapter, uint8_t fgEnable);
 void wlanRxMcsInfoMonitor(struct ADAPTER *prAdapter,
 					    unsigned long ulParamPtr);
 #endif
+
+uint32_t wlanSetDisassociate(IN struct ADAPTER *prAdapter,
+			     IN uint8_t ucReasonOfDiconnect);
+

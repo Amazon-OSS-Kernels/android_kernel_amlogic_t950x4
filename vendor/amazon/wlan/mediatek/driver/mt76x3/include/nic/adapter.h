@@ -609,6 +609,13 @@ struct BSS_INFO {
 	struct SWITCH_CH_AND_BAND_PARAMS CSAParams;
 	uint8_t fgHasStopTx;
 #endif
+
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+	bool fgIsDhcpAcked;
+	uint8_t aucDhcpServerIpAddr[4];
+	/* DHCP renew offload interval configured by upper-layer */
+	uint32_t u4DhcpRenewIntv;
+#endif
 };
 
 /* Support AP Selection */
@@ -758,7 +765,7 @@ struct WIFI_VAR {
 
 	struct AIS_FSM_INFO rAisFsmInfo;
 
-	enum ENUM_PWR_STATE aePwrState[MAX_BSSID_NUM];
+	enum ENUM_PWR_STATE aePwrState[MAX_BSSID_NUM + 1];
 
 	struct BSS_INFO arBssInfoPool[MAX_BSSID_NUM];
 

@@ -179,7 +179,7 @@ const u_int8_t afgIsOFDMRate[RATE_NUM_SW] = {
  */
 /*----------------------------------------------------------------------------*/
 void
-rateGetRateSetFromIEs(IN struct IE_SUPPORTED_RATE *prIeSupportedRate,
+rateGetRateSetFromIEs(IN struct IE_SUPPORTED_RATE_IOT *prIeSupportedRate,
 		      IN struct IE_EXT_SUPPORTED_RATE *prIeExtSupportedRate,
 		      OUT uint16_t *pu2OperationalRateSet,
 		      OUT uint16_t *pu2BSSBasicRateSet,
@@ -204,7 +204,12 @@ rateGetRateSetFromIEs(IN struct IE_SUPPORTED_RATE *prIeSupportedRate,
 		/* ASSERT(prIeSupportedRate->ucLength
 		 *  <= ELEM_MAX_LEN_SUP_RATES);
 		 */
-		ASSERT(prIeSupportedRate->ucLength <= RATE_NUM_SW);
+		if (prIeSupportedRate->ucLength > ELEM_MAX_LEN_SUP_RATES_IOT) {
+			*pu2OperationalRateSet = 0;
+			*pu2BSSBasicRateSet = 0;
+			*pfgIsUnknownBSSBasicRate = TRUE;
+			return;
+		}
 
 		for (i = 0; i < prIeSupportedRate->ucLength; i++) {
 			ucRate =
@@ -237,7 +242,6 @@ rateGetRateSetFromIEs(IN struct IE_SUPPORTED_RATE *prIeSupportedRate,
 		/* ASSERT(prIeExtSupportedRate->ucLength
 		 *  <= ELEM_MAX_LEN_EXTENDED_SUP_RATES);
 		 */
-
 		for (i = 0; i < prIeExtSupportedRate->ucLength; i++) {
 			ucRate =
 			    prIeExtSupportedRate->aucExtSupportedRates[i] &

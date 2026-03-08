@@ -101,6 +101,8 @@
 
 #define CFG_STAT_DBG_PEER_NUM	10
 
+#define IS_UNSINGED_SUM_OVERFLOW(a,b) (a > (a+b))
+
 /*******************************************************************************
  *                  F U N C T I O N   D E C L A R A T I O N S
  *******************************************************************************
@@ -2064,7 +2066,16 @@ priv_set_ndis(IN struct net_device *prNetDev,
 	} else if (prWlanReqEntry->eOidMethod ==
 		   ENUM_OID_DRIVER_CORE) {
 		/* driver core */
+		if (prNdisReq->inNdisOidlength >
+			sizeof(prNdisReq->ndisOidContent)) {
+			DBGLOG(REQ, WARN,
+			       "Set %s: Invalid length (current=%d, needed=%d)\n",
+			       prWlanReqEntry->pucOidName,
+			       prNdisReq->inNdisOidlength,
+			       sizeof(prNdisReq->ndisOidContent));
 
+			return -EINVAL;
+		}
 		status = kalIoctl(prGlueInfo,
 			(PFN_OID_HANDLER_FUNC) prWlanReqEntry->pfOidSetHandler,
 			prNdisReq->ndisOidContent,
@@ -2214,7 +2225,16 @@ priv_get_ndis(IN struct net_device *prNetDev,
 	} else if (prWlanReqEntry->eOidMethod ==
 		   ENUM_OID_DRIVER_CORE) {
 		/* driver core */
+		if (prNdisReq->inNdisOidlength >
+			sizeof(prNdisReq->ndisOidContent)) {
+			DBGLOG(REQ, WARN,
+			       "Set %s: Invalid length (current=%d, needed=%d)\n",
+			       prWlanReqEntry->pucOidName,
+			       prNdisReq->inNdisOidlength,
+			       sizeof(prNdisReq->ndisOidContent));
 
+			return -EINVAL;
+		}
 		status = kalIoctl(prGlueInfo,
 		    (PFN_OID_HANDLER_FUNC)prWlanReqEntry->pfOidQueryHandler,
 		    prNdisReq->ndisOidContent, prNdisReq->inNdisOidlength,
@@ -2852,6 +2872,7 @@ reqExtSetAcpiDevicePowerState(IN struct GLUE_INFO
 #define CMD_GET_WTBL_INFO	"GET_WTBL"
 #define CMD_GET_MIB_INFO	"GET_MIB"
 #define CMD_GET_STA_INFO	"GET_STA"
+#define CMD_GET_MAGIC_PKT_INFO	"GET_MAGIC_PKT_INFO"
 #define CMD_SET_FW_LOG		"SET_FWLOG"
 #define CMD_GET_QUE_INFO	"GET_QUE"
 #define CMD_GET_MEM_INFO	"GET_MEM"
@@ -3015,6 +3036,11 @@ reqExtSetAcpiDevicePowerState(IN struct GLUE_INFO
 #define CMD_GET_MDNS_PATTERNS "GET_MDNS_PATTERNS"
 
 #endif
+
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+#define CMD_SET_DHCP_INFO       "SET_DHCP"
+#endif
+
 #define CMD_SET_ADV_PWS		"SET_ADV_PWS"
 #define CMD_SET_MDTIM		"SET_MDTIM"
 #define CMD_GET_DSLP_CNT	"GET_DSLEEP_CNT"
@@ -3352,7 +3378,7 @@ int priv_driver_get_dbg_level(IN struct net_device *prNetDev,
 	struct GLUE_INFO *prGlueInfo = NULL;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4DbgIdx = 0, u4DbgMask = 0;
 	u_int8_t fgIsCmdAccept = FALSE;
 	int32_t u4Ret = 0;
@@ -3395,14 +3421,9 @@ int priv_driver_get_dbg_level(IN struct net_device *prNetDev,
 static int priv_cmd_not_support(IN struct net_device *prNetDev,
 	IN char *pcCommand, IN int i4TotalLen)
 {
-	int32_t i4BytesWritten = 0;
-
 	DBGLOG(REQ, WARN, "not support priv command: %s\n", pcCommand);
 
-	i4BytesWritten = scnprintf(pcCommand, i4TotalLen,
-					 "not support priv command\n");
-
-	return i4BytesWritten;
+	return -EOPNOTSUPP;
 }
 
 #if CFG_SUPPORT_QA_TOOL
@@ -3516,7 +3537,7 @@ static int priv_driver_get_rx_statistics(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t u4Ret = 0;
 	struct PARAM_CUSTOM_ACCESS_RX_STAT rRxStatisticsTest;
 
@@ -4532,8 +4553,8 @@ static int priv_driver_coex_ctrl(IN struct net_device *prNetDev,
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
 	int32_t i4ArgNum = 2;
-	signed char *apcArgv[WLAN_CFG_ARGV_MAX];
-	uint32_t u4Ret = 0;
+	signed char *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
+	int32_t i4Ret = 0;
 	uint32_t u4Offset = 0;
 	int32_t i4SubArgNum;
 	enum ENUM_COEX_CMD_CTRL CoexCmdCtrl;
@@ -4554,8 +4575,8 @@ static int priv_driver_coex_ctrl(IN struct net_device *prNetDev,
 	if (i4Argc >= i4ArgNum) {
 
 		/* Parse Coex SubCmd */
-		u4Ret = kalkStrtou32(apcArgv[1], 0, &rCmdCoexHandler.u4SubCmd);
-		if (u4Ret)
+		i4Ret = kalkStrtou32(apcArgv[1], 0, &rCmdCoexHandler.u4SubCmd);
+		if (i4Ret)
 			return -1;
 
 		CoexCmdCtrl =
@@ -4564,10 +4585,10 @@ static int priv_driver_coex_ctrl(IN struct net_device *prNetDev,
 		switch (CoexCmdCtrl) {
 		case COEX_CMD_GET_INFO:
 		{
-			u4Ret = priv_driver_get_coex_info(prGlueInfo,
+			i4Ret = priv_driver_get_coex_info(prGlueInfo,
 							&rCmdCoexHandler,
 							apcArgv);
-			if (u4Ret)
+			if (i4Ret)
 				return -1;
 			priv_coex_get_info(pcCommand,
 					i4TotalLen,
@@ -4584,19 +4605,24 @@ static int priv_driver_coex_ctrl(IN struct net_device *prNetDev,
 			if (i4Argc < i4SubArgNum)
 				break;
 			/* Isolation Detection Method */
-			u4Ret = priv_driver_iso_detect(prGlueInfo,
+			i4Ret = priv_driver_iso_detect(prGlueInfo,
 							&rCmdCoexHandler,
 							apcArgv);
-			if (u4Ret)
+			if (i4Ret)
 				return -1;
 
 			/* Get Isolation value */
 			prCmdCoexIsoDetect =
-		(struct CMD_COEX_ISO_DETECT *)rCmdCoexHandler.aucBuffer;
+				(struct CMD_COEX_ISO_DETECT *)rCmdCoexHandler.aucBuffer;
 
 			/* Set Return i4BytesWritten Value */
-			u4Offset = scnprintf(pcCommand, i4TotalLen, "%d",
+			i4Ret = scnprintf(pcCommand, i4TotalLen, "%d",
 				(prCmdCoexIsoDetect->u4Isolation/2));
+			if (i4Ret < 0) {
+				DBGLOG(REQ, WARN, "Get ISO Fail %d\n", i4Ret);
+				return -1;
+			}
+			u4Offset = i4Ret;
 			DBGLOG(REQ, INFO, "Isolation: %d\n",
 				(prCmdCoexIsoDetect->u4Isolation/2));
 			break;
@@ -4606,8 +4632,8 @@ static int priv_driver_coex_ctrl(IN struct net_device *prNetDev,
 			break;
 		}
 
-	 /* Set Return i4BytesWritten Value */
-	i4BytesWritten = (int32_t)u4Offset;
+		/* Set Return i4BytesWritten Value */
+		i4BytesWritten = (int32_t)u4Offset;
 	}
 	return i4BytesWritten;
 }
@@ -4620,8 +4646,8 @@ static int priv_driver_get_sta_info(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
-	uint8_t aucMacAddr[MAC_ADDR_LEN];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
+	uint8_t aucMacAddr[MAC_ADDR_LEN] = {0};
 	uint8_t ucWlanIndex;
 	uint8_t *pucMacAddr = NULL;
 	struct PARAM_HW_WLAN_INFO *prHwWlanInfo;
@@ -4675,6 +4701,11 @@ static int priv_driver_get_sta_info(IN struct net_device *prNetDev,
 
 	prHwWlanInfo = (struct PARAM_HW_WLAN_INFO *)kalMemAlloc(
 			sizeof(struct PARAM_HW_WLAN_INFO), VIR_MEM_TYPE);
+	if (!prHwWlanInfo) {
+		DBGLOG(REQ, WARN, "prHwWlanInfo Alloc Failed\n");
+		return -1;
+	}
+
 	prHwWlanInfo->u4Index = ucWlanIndex;
 
 	DBGLOG(REQ, INFO, "MT6632 : index = %d i4TotalLen = %d\n",
@@ -5144,6 +5175,64 @@ static int priv_driver_set_fw_log(IN struct net_device *prNetDev,
 }
 #endif
 
+static int priv_driver_get_magic_pkt_info(IN struct net_device *prNetDev, IN char *pcCommand, IN int i4TotalLen)
+{
+	struct GLUE_INFO *prGlueInfo = NULL;
+	uint32_t rStatus = WLAN_STATUS_SUCCESS;
+	uint32_t u4BufLen = 0;
+	int32_t i4BytesWritten = 0;
+	int32_t i4Argc = 0;
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	struct CMD_GET_MAGIC_PKT_INFO_T *cmd = NULL;
+	bool fgWaitResp = TRUE;
+	bool fgRead = TRUE;
+
+	ASSERT(prNetDev);
+
+	DBGLOG(REQ, INFO, "command is %s\n", pcCommand);
+	wlanCfgParseArgument(pcCommand, &i4Argc, apcArgv);
+	DBGLOG(REQ, INFO, "argc is %i\n", i4Argc);
+
+	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
+
+	if (!prGlueInfo)
+		goto get_info_invalid;
+
+	cmd = (struct CMD_GET_MAGIC_PKT_INFO_T *)kalMemAlloc(
+			sizeof(struct CMD_GET_MAGIC_PKT_INFO_T), VIR_MEM_TYPE);
+
+	if (!cmd)
+		goto get_info_invalid;
+
+	if (i4Argc > 1)
+		goto get_info_invalid;
+
+	memset(cmd, 0, sizeof(struct CMD_GET_MAGIC_PKT_INFO_T));
+	cmd->u2Type = CMD_GET_MAGIC_PKT_INFO_TYPE;
+	cmd->u2Len = sizeof(struct CMD_GET_MAGIC_PKT_INFO_T);
+
+	rStatus = kalIoctl(prGlueInfo, wlanoidAdvCtrl, cmd, sizeof(struct CMD_GET_MAGIC_PKT_INFO_T),
+		fgWaitResp, fgRead, TRUE, &u4BufLen);
+
+	if ((rStatus != WLAN_STATUS_SUCCESS) && (rStatus != WLAN_STATUS_PENDING)) {
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\ncommand failed %x", rStatus);
+	} else {
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+			"\nMagicPacket_Rx count = %d", cmd->u4MagicPktCntTotal);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+			"\nPullLowGpio_Wakeup count = %d", cmd->u4GpioPullLowCntTotal);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+			"\nPullHighGpio_Wakeup count = %d", cmd->u4GpioPullHighCntTotal);
+	}
+
+get_info_invalid:
+	if (cmd)
+		kalMemFree(cmd, VIR_MEM_TYPE, sizeof(struct CMD_GET_MAGIC_PKT_INFO_T));
+	return i4BytesWritten;
+}
+
+
 static int priv_driver_get_mcr(IN struct net_device *prNetDev,
 			       IN char *pcCommand, IN int i4TotalLen)
 {
@@ -5152,7 +5241,7 @@ static int priv_driver_get_mcr(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 	int32_t i4ArgNum = 2;
 	struct CMD_ACCESS_REG rCmdAccessReg;
@@ -5257,7 +5346,7 @@ static int priv_driver_set_test_mode(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 	int32_t i4ArgNum = 2, u4MagicKey = 0;
 
@@ -5310,7 +5399,7 @@ static int priv_driver_set_test_cmd(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 	int32_t i4ArgNum = 3;
 	struct PARAM_MTK_WIFI_TEST_STRUCT rRfATInfo;
@@ -5362,7 +5451,7 @@ static int priv_driver_get_test_result(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 	uint32_t u4Data = 0;
 	int32_t i4ArgNum = 3;
@@ -5945,6 +6034,9 @@ static int32_t priv_driver_dump_stat_info(struct ADAPTER *prAdapter,
 	int16_t i2Wf1AvgPwr;
 	uint32_t u4BufLen = 0;
 
+	uint32_t au4MultiTotal = 0;
+	uint32_t au4DivtiTotal = 0;
+
 	ucSkipAr = prQueryStaStatistics->ucSkipAr;
 	prRxCtrl = &prAdapter->rRxCtrl;
 	ucNss = prAdapter->rWifiVar.ucNSS;
@@ -5976,6 +6068,28 @@ static int32_t priv_driver_dump_stat_info(struct ADAPTER *prAdapter,
 	}
 
 	for (ucDbdcIdx = 0; ucDbdcIdx < ENUM_BAND_NUM; ucDbdcIdx++) {
+		/* check overflow */
+		if (IS_UNSINGED_SUM_OVERFLOW(au4RxMpduCnt[ucDbdcIdx],
+			prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt) ||
+			IS_UNSINGED_SUM_OVERFLOW(au4FcsError[ucDbdcIdx],
+			prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError)) {
+			au4RxMpduCnt[ucDbdcIdx] = 0;
+			au4FcsError[ucDbdcIdx] = 0;
+		}
+
+		if (IS_UNSINGED_SUM_OVERFLOW(au4RxFifoCnt[ucDbdcIdx],
+			prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxFifoFull)) {
+			au4RxFifoCnt[ucDbdcIdx] = 0;
+		}
+
+		if (IS_UNSINGED_SUM_OVERFLOW(au4AmpduTxSfCnt[ucDbdcIdx],
+			prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4AmpduTxSfCnt) ||
+			IS_UNSINGED_SUM_OVERFLOW(au4AmpduTxAckSfCnt[ucDbdcIdx],
+			prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4AmpduTxAckSfCnt)) {
+			au4AmpduTxSfCnt[ucDbdcIdx] = 0;
+			au4AmpduTxAckSfCnt[ucDbdcIdx] = 0;
+		}
+
 		au4RxMpduCnt[ucDbdcIdx] +=
 		    prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt;
 		au4FcsError[ucDbdcIdx] +=
@@ -5987,24 +6101,75 @@ static int32_t priv_driver_dump_stat_info(struct ADAPTER *prAdapter,
 		au4AmpduTxAckSfCnt[ucDbdcIdx] +=
 		    prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4AmpduTxAckSfCnt;
 
-		u4RxPer[ucDbdcIdx] = ((au4RxMpduCnt[ucDbdcIdx] +
-		    au4FcsError[ucDbdcIdx]) == 0) ? (0) :
-		    (1000 * au4FcsError[ucDbdcIdx] /
-		    (au4RxMpduCnt[ucDbdcIdx] + au4FcsError[ucDbdcIdx]));
+		/* to avoid calculation overflow */
+		au4MultiTotal = 1000 * au4FcsError[ucDbdcIdx];
+		/* multiplication overflow check */
+		if (au4FcsError[ucDbdcIdx] != au4MultiTotal/1000) {
+		/* seperately div by 1000 to avoid if summation lead to overflow */
+			au4DivtiTotal = (au4RxMpduCnt[ucDbdcIdx]/1000) +
+				(au4FcsError[ucDbdcIdx]/1000);
+			if (au4DivtiTotal != 0) {
+				u4RxPer[ucDbdcIdx] =
+				au4FcsError[ucDbdcIdx]/au4DivtiTotal;
+			} else {
+				u4RxPer[ucDbdcIdx] = 0;
+			}
+		} else {
+			u4RxPer[ucDbdcIdx] = ((au4RxMpduCnt[ucDbdcIdx] +
+				au4FcsError[ucDbdcIdx]) == 0) ? (0) :
+				(1000 * au4FcsError[ucDbdcIdx] /
+				(au4RxMpduCnt[ucDbdcIdx] + au4FcsError[ucDbdcIdx]));
+		}
 
-		u4AmpduPer[ucDbdcIdx] =
-		    (au4AmpduTxSfCnt[ucDbdcIdx] == 0) ? (0) :
-		    (1000 * (au4AmpduTxSfCnt[ucDbdcIdx] -
-		    au4AmpduTxAckSfCnt[ucDbdcIdx]) /
-		    au4AmpduTxSfCnt[ucDbdcIdx]);
+		au4MultiTotal = 1000 * (au4AmpduTxSfCnt[ucDbdcIdx] -
+					au4AmpduTxAckSfCnt[ucDbdcIdx]);
+		/* multiplication overflow check */
+		if ((au4AmpduTxSfCnt[ucDbdcIdx] -
+				au4AmpduTxAckSfCnt[ucDbdcIdx])
+				!=  au4MultiTotal/1000) {
+			au4DivtiTotal = au4AmpduTxSfCnt[ucDbdcIdx]/1000;
+			if (au4DivtiTotal != 0) {
+				u4AmpduPer[ucDbdcIdx] =
+					(au4AmpduTxSfCnt[ucDbdcIdx] -
+					au4AmpduTxAckSfCnt[ucDbdcIdx]) /
+					au4DivtiTotal;
+			} else {
+				u4AmpduPer[ucDbdcIdx] = 0;
+			}
+		} else {
+			u4AmpduPer[ucDbdcIdx] =
+				(au4AmpduTxSfCnt[ucDbdcIdx] == 0) ? (0) :
+				(1000 * (au4AmpduTxSfCnt[ucDbdcIdx] -
+				au4AmpduTxAckSfCnt[ucDbdcIdx]) /
+				au4AmpduTxSfCnt[ucDbdcIdx]);
+		}
 
-		u4InstantRxPer[ucDbdcIdx] =
-		    ((prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt +
-		    prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError) == 0)
-		    ? (0) :
-		    (1000 * prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError
-		    / (prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt +
-		    prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError));
+		au4MultiTotal = 1000 * prQueryStaStatistics->
+					rMibInfo[ucDbdcIdx].u4FcsError;
+		/* multiplication overflow check */
+		if (prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError
+			!=  au4MultiTotal/1000) {
+		/* seperately div by 1000 to avoid if summation lead to overflow */
+			au4DivtiTotal = (prQueryStaStatistics->rMibInfo[ucDbdcIdx].
+					u4RxMpduCnt/1000) +
+				(prQueryStaStatistics->rMibInfo[ucDbdcIdx].
+					u4FcsError/1000);
+			if (au4DivtiTotal != 0) {
+				u4InstantRxPer[ucDbdcIdx] = prQueryStaStatistics->
+				rMibInfo[ucDbdcIdx].u4FcsError / au4DivtiTotal;
+			} else {
+				u4InstantRxPer[ucDbdcIdx] = 0;
+			}
+		} else {
+			u4InstantRxPer[ucDbdcIdx] =
+				((prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt +
+				prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError) == 0)
+				? (0) :
+				(1000 * prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError
+				/ (prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt +
+				prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError));
+		}
+
 	}
 
 	/* get Beacon RSSI */
@@ -6470,6 +6635,8 @@ static int32_t priv_driver_dump_stat_info(struct ADAPTER *prAdapter,
 	enum AGG_RANGE_TYPE_T eRangeType = ENUM_AGG_RANGE_TYPE_TX;
 	uint16_t u2Idx = 0;
 	uint8_t ucRcpi0 = 0, ucRcpi1 = 0, ucRcpi2 = 0, ucRcpi3 = 0;
+	uint32_t au4MultiTotal = 0;
+	uint32_t au4DivtiTotal = 0;
 
 	ucSkipAr = prQueryStaStatistics->ucSkipAr;
 	prRxCtrl = &prAdapter->rRxCtrl;
@@ -6509,6 +6676,28 @@ static int32_t priv_driver_dump_stat_info(struct ADAPTER *prAdapter,
 	}
 
 	for (ucDbdcIdx = 0; ucDbdcIdx < ENUM_BAND_NUM; ucDbdcIdx++) {
+		/* check overflow */
+		if (IS_UNSINGED_SUM_OVERFLOW(au4RxMpduCnt[ucDbdcIdx],
+			g_arMibInfo[ucDbdcIdx].u4RxMpduCnt) ||
+			IS_UNSINGED_SUM_OVERFLOW(au4FcsError[ucDbdcIdx],
+			g_arMibInfo[ucDbdcIdx].u4FcsError)) {
+			au4RxMpduCnt[ucDbdcIdx] = 0;
+			au4FcsError[ucDbdcIdx] = 0;
+		}
+
+		if (IS_UNSINGED_SUM_OVERFLOW(au4RxFifoCnt[ucDbdcIdx],
+			g_arMibInfo[ucDbdcIdx].u4RxFifoFull)) {
+			au4RxFifoCnt[ucDbdcIdx] = 0;
+		}
+
+		if (IS_UNSINGED_SUM_OVERFLOW(au4AmpduTxSfCnt[ucDbdcIdx],
+			g_arMibInfo[ucDbdcIdx].u4AmpduTxSfCnt) ||
+			IS_UNSINGED_SUM_OVERFLOW(au4AmpduTxAckSfCnt[ucDbdcIdx],
+			g_arMibInfo[ucDbdcIdx].u4AmpduTxAckSfCnt)) {
+			au4AmpduTxSfCnt[ucDbdcIdx] = 0;
+			au4AmpduTxAckSfCnt[ucDbdcIdx] = 0;
+		}
+
 		au4RxMpduCnt[ucDbdcIdx] += g_arMibInfo[ucDbdcIdx].u4RxMpduCnt;
 		au4FcsError[ucDbdcIdx] += g_arMibInfo[ucDbdcIdx].u4FcsError;
 		au4RxFifoCnt[ucDbdcIdx] += g_arMibInfo[ucDbdcIdx].u4RxFifoFull;
@@ -6517,28 +6706,78 @@ static int32_t priv_driver_dump_stat_info(struct ADAPTER *prAdapter,
 		au4AmpduTxAckSfCnt[ucDbdcIdx] +=
 			g_arMibInfo[ucDbdcIdx].u4AmpduTxAckSfCnt;
 
-		u4RxPer[ucDbdcIdx] =
-		    ((au4RxMpduCnt[ucDbdcIdx] + au4FcsError[ucDbdcIdx]) == 0) ?
-			(0) : (1000 * au4FcsError[ucDbdcIdx] /
-				(au4RxMpduCnt[ucDbdcIdx] +
-				au4FcsError[ucDbdcIdx]));
+		/* to avoid calculation overflow */
+		au4MultiTotal = 1000 * au4FcsError[ucDbdcIdx];
+		/* multiplication overflow check */
+		if (au4FcsError[ucDbdcIdx] !=  au4MultiTotal/1000) {
+		/* seperately div by 1000 to avoid if summation lead to overflow */
+			au4DivtiTotal = (au4RxMpduCnt[ucDbdcIdx]/1000) +
+				(au4FcsError[ucDbdcIdx]/1000);
+			if (au4DivtiTotal != 0) {
+				u4RxPer[ucDbdcIdx] =
+				au4FcsError[ucDbdcIdx]/au4DivtiTotal;
+			} else {
+				u4RxPer[ucDbdcIdx] = 0;
+			}
+		} else {
+			u4RxPer[ucDbdcIdx] =
+				((au4RxMpduCnt[ucDbdcIdx] + au4FcsError[ucDbdcIdx]) == 0) ?
+				(0) : (1000 * au4FcsError[ucDbdcIdx] /
+					(au4RxMpduCnt[ucDbdcIdx] +
+					au4FcsError[ucDbdcIdx]));
+		}
 
-		u4AmpduPer[ucDbdcIdx] =
-		    (au4AmpduTxSfCnt[ucDbdcIdx] == 0) ?
-			(0) : (1000 * (au4AmpduTxSfCnt[ucDbdcIdx] -
-				au4AmpduTxAckSfCnt[ucDbdcIdx]) /
-				au4AmpduTxSfCnt[ucDbdcIdx]);
+		au4MultiTotal = 1000 * (au4AmpduTxSfCnt[ucDbdcIdx] -
+					au4AmpduTxAckSfCnt[ucDbdcIdx]);
+		/* multiplication overflow check */
+		if ((au4AmpduTxSfCnt[ucDbdcIdx] -
+				au4AmpduTxAckSfCnt[ucDbdcIdx])
+				!=  au4MultiTotal/1000) {
+			au4DivtiTotal = au4AmpduTxSfCnt[ucDbdcIdx]/1000;
+			if (au4DivtiTotal != 0) {
+				u4AmpduPer[ucDbdcIdx] =
+					(au4AmpduTxSfCnt[ucDbdcIdx] -
+					au4AmpduTxAckSfCnt[ucDbdcIdx]) /
+					au4DivtiTotal;
+			} else {
+				u4AmpduPer[ucDbdcIdx] = 0;
+			}
+		} else {
+			u4AmpduPer[ucDbdcIdx] =
+				(au4AmpduTxSfCnt[ucDbdcIdx] == 0) ?
+				(0) : (1000 * (au4AmpduTxSfCnt[ucDbdcIdx] -
+					au4AmpduTxAckSfCnt[ucDbdcIdx]) /
+					au4AmpduTxSfCnt[ucDbdcIdx]);
+		}
 
-		u4InstantRxPer[ucDbdcIdx] =
-			((prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt
-			+ prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError)
-			== 0) ?
-				(0) : (1000 * prQueryStaStatistics->
-				rMibInfo[ucDbdcIdx].u4FcsError /
+		/* multiplication overflow check */
+		au4MultiTotal = 1000 * prQueryStaStatistics->
+					rMibInfo[ucDbdcIdx].u4FcsError;
+		if (prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError
+			!=  au4MultiTotal/1000) {
+		/* seperately div by 1000 to avoid if summation lead to overflow */
+			au4DivtiTotal = (prQueryStaStatistics->rMibInfo[ucDbdcIdx].
+					u4RxMpduCnt/1000) +
 				(prQueryStaStatistics->rMibInfo[ucDbdcIdx].
-				u4RxMpduCnt +
-				prQueryStaStatistics->rMibInfo[ucDbdcIdx].
-				u4FcsError));
+					u4FcsError/1000);
+			if (au4DivtiTotal != 0) {
+				u4InstantRxPer[ucDbdcIdx] = prQueryStaStatistics->
+				rMibInfo[ucDbdcIdx].u4FcsError / au4DivtiTotal;
+			} else {
+				u4InstantRxPer[ucDbdcIdx] = 0;
+			}
+		} else {
+			u4InstantRxPer[ucDbdcIdx] =
+				((prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4RxMpduCnt
+				+ prQueryStaStatistics->rMibInfo[ucDbdcIdx].u4FcsError)
+				== 0) ?
+					(0) : (1000 * prQueryStaStatistics->
+					rMibInfo[ucDbdcIdx].u4FcsError /
+					(prQueryStaStatistics->rMibInfo[ucDbdcIdx].
+					u4RxMpduCnt +
+					prQueryStaStatistics->rMibInfo[ucDbdcIdx].
+					u4FcsError));
+		}
 	}
 
 	rRssi = RCPI_TO_dBm(prQueryStaStatistics->ucRcpi);
@@ -7297,7 +7536,7 @@ int priv_driver_set_fixed_fallback(IN struct net_device *prNetDev,
 	u_int8_t fgStatus = TRUE;
 	static uint8_t fgIsUseWCID = FALSE;
 
-	struct PARAM_CUSTOM_SW_CTRL_STRUCT rSwCtrlInfo;
+	struct PARAM_CUSTOM_SW_CTRL_STRUCT rSwCtrlInfo = {0};
 
 	ASSERT(prNetDev);
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
@@ -7758,9 +7997,9 @@ static int priv_driver_get_sta_stat(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0, u4Ret, u4StatGroup = 0xFFFFFFFF;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
-	uint8_t aucMacAddr[MAC_ADDR_LEN];
-	uint8_t ucWlanIndex;
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
+	uint8_t aucMacAddr[MAC_ADDR_LEN] = {0};
+	uint8_t ucWlanIndex = 0;
 	uint8_t *pucMacAddr = NULL;
 	struct PARAM_HW_WLAN_INFO *prHwWlanInfo = NULL;
 	struct PARAM_GET_STA_STATISTICS *prQueryStaStatistics = NULL;
@@ -8745,7 +8984,7 @@ static int priv_driver_show_rx_stat(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	struct PARAM_CUSTOM_ACCESS_RX_STAT *prRxStatisticsTest;
 	u_int8_t fgResetCnt = FALSE;
 	struct PARAM_CUSTOM_SW_CTRL_STRUCT rSwCtrlInfo;
@@ -8824,7 +9063,7 @@ static int priv_driver_get_ipi(IN struct net_device *prNetDev,
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
 	int32_t u4Ret = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	struct PARAM_GET_IPI_INFO_T rCmdGetIpiInfo;
 
 	ASSERT(prNetDev);
@@ -8879,7 +9118,7 @@ static int priv_driver_set_acl_policy(IN struct net_device *prNetDev,
 	struct GLUE_INFO *prGlueInfo = NULL;
 	struct ADAPTER *prAdapter = NULL;
 	struct BSS_INFO *prBssInfo = NULL;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t i4Argc = 0, i4BytesWritten = 0, i4Ret = 0, i4Policy = 0;
 	uint8_t ucRoleIdx = 0, ucBssIdx = 0;
 
@@ -8981,7 +9220,7 @@ static int priv_driver_add_acl_entry(IN struct net_device *prNetDev,
 	struct GLUE_INFO *prGlueInfo = NULL;
 	struct ADAPTER *prAdapter = NULL;
 	struct BSS_INFO *prBssInfo = NULL;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint8_t aucMacAddr[MAC_ADDR_LEN] = {0};
 	int32_t i = 0, i4Argc = 0, i4BytesWritten = 0, i4Ret = 0;
 	uint8_t ucRoleIdx = 0, ucBssIdx = 0;
@@ -9072,7 +9311,7 @@ static int priv_driver_del_acl_entry(IN struct net_device *prNetDev,
 	struct GLUE_INFO *prGlueInfo = NULL;
 	struct ADAPTER *prAdapter = NULL;
 	struct BSS_INFO *prBssInfo = NULL;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint8_t aucMacAddr[MAC_ADDR_LEN] = {0};
 	int32_t i = 0, j = 0, i4Argc = 0, i4BytesWritten = 0, i4Ret = 0;
 	uint8_t ucRoleIdx = 0, ucBssIdx = 0;
@@ -9275,7 +9514,7 @@ static int priv_driver_get_drv_mcr(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 
 	/* Add Antenna Selection Input */
@@ -9388,7 +9627,7 @@ static int priv_driver_get_sw_ctrl(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t u4Ret = 0;
 
 	struct PARAM_CUSTOM_SW_CTRL_STRUCT rSwCtrlInfo;
@@ -9857,6 +10096,10 @@ int priv_driver_set_chip_config(IN struct net_device *prNetDev,
 	uint32_t u4PrefixLen = 0;
 	/* INT_32 i4Argc = 0; */
 	/* PCHAR  apcArgv[WLAN_CFG_ARGV_MAX] = {0}; */
+	int32_t i4Argc = 0;
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
+	char *pcTmpCommand;
+	uint32_t u4StrLen;
 
 	struct PARAM_CUSTOM_CHIP_CONFIG_STRUCT rChipConfigInfo = {0};
 
@@ -9870,6 +10113,34 @@ int priv_driver_set_chip_config(IN struct net_device *prNetDev,
 	/* wlanCfgParseArgument(pcCommand, &i4Argc, apcArgv); */
 	/* DBGLOG(REQ, LOUD,("argc is %i\n",i4Argc)); */
 	/*  */
+
+	u4StrLen = kalStrLen(pcCommand);
+	pcTmpCommand = (char *) kalMemAlloc(u4StrLen + 1, VIR_MEM_TYPE);
+
+	if (!pcTmpCommand) {
+		DBGLOG(REQ, ERROR, "TmpCmd : Memory alloc failed\n");
+		return -1;
+	}
+
+	kalStrnCpy(pcTmpCommand, pcCommand, u4StrLen);
+	pcTmpCommand[u4StrLen] = '\0';
+
+	wlanCfgParseArgument(pcTmpCommand, &i4Argc, apcArgv);
+
+	/* KeepFullPower Enable cmd is blocked when entering suspend mode */
+	if ((i4Argc == 3) && (apcArgv[0] != NULL) &&
+		(apcArgv[1] != NULL) && (apcArgv[2] != NULL)) {
+		if ((kalStrnCmp("KeepFullPwr", apcArgv[1], 11) == 0) &&
+				(kalStrnCmp("1", apcArgv[2], 1) == 0) &&
+				(prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap & BLOCK_KEEP_FULL_PWR)) {
+			DBGLOG(REQ, STATE, "KeepFullPower Enable Command is blocked\n");
+			kalMemFree(pcTmpCommand, VIR_MEM_TYPE, u4StrLen + 1);
+			return 0;
+		}
+	}
+
+	kalMemFree(pcTmpCommand, VIR_MEM_TYPE, u4StrLen + 1);
+
 	u4CmdLen = kalStrnLen(pcCommand, i4TotalLen);
 	u4PrefixLen = kalStrLen(CMD_SET_CHIP) + 1 /*space */;
 
@@ -10094,7 +10365,7 @@ int priv_driver_set_ap_start(IN struct net_device *prNetDev, IN char *pcCommand,
 
 	struct PARAM_CUSTOM_P2P_SET_STRUCT rSetP2P;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 	int32_t i4ArgNum = 2;
 
@@ -10169,7 +10440,7 @@ int priv_driver_set_band(IN struct net_device *prNetDev, IN char *pcCommand,
 	uint32_t ucBand = 0;
 	uint8_t ucBssIndex;
 	enum ENUM_BAND eBand = BAND_NULL;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t u4Ret = 0;
 
 	ASSERT(prNetDev);
@@ -10212,11 +10483,11 @@ int priv_driver_set_txpower(IN struct net_device *prNetDev,
 	uint32_t rStatus = WLAN_STATUS_SUCCESS;
 	uint32_t u4BufLen = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	struct SET_TXPWR_CTRL *prTxpwr;
 	uint16_t i;
 	int32_t u4Ret = 0;
-	int32_t ai4Setting[4];
+	int32_t ai4Setting[4] = {0};
 
 	ASSERT(prNetDev);
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
@@ -10336,7 +10607,7 @@ int priv_driver_set_country(IN struct net_device *prNetDev,
 	uint32_t rStatus = WLAN_STATUS_SUCCESS;
 	uint32_t u4BufLen = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint8_t aucCountry[2];
 
 	ASSERT(prNetDev);
@@ -10395,7 +10666,7 @@ int priv_driver_set_csa(IN struct net_device *prNetDev,
 {
 	struct GLUE_INFO *prGlueInfo = NULL;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t ch_num = 0;
 	uint32_t u4Ret = 0;
 	uint8_t ucRoleIdx = 0;
@@ -10457,7 +10728,7 @@ int priv_driver_get_channels(IN struct net_device *prNetDev,
 {
 	uint32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 #if (CFG_SUPPORT_SINGLE_SKU == 1)
 	uint32_t ch_idx, start_idx, end_idx;
 	struct channel *pCh;
@@ -10550,7 +10821,7 @@ int priv_driver_get_ap_channels(IN struct net_device *prNetDev,
 {
 	uint32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 #if (CFG_SUPPORT_SINGLE_SKU == 1)
 	uint32_t ch_idx, start_idx, end_idx;
 	struct channel *pCh;
@@ -10904,7 +11175,7 @@ int priv_driver_set_mcc_time(IN struct net_device *prNetDev,
 	uint32_t i4BytesWritten = 0;
 	uint32_t ucLinkType = 0; /* 0 for AIS and 1 for P2P */
 	uint32_t ucStayTime = 0; /* In unit of us */
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t i4Ret = 0;
 
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
@@ -10965,7 +11236,7 @@ int priv_driver_set_miracast(IN struct net_device *prNetDev,
 				(struct WFD_CFG_SETTINGS *) NULL;
 	struct MSG_WFD_CONFIG_SETTINGS_CHANGED *prMsgWfdCfgUpdate =
 				(struct MSG_WFD_CONFIG_SETTINGS_CHANGED *) NULL;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t u4Ret = 0;
 
 	ASSERT(prNetDev);
@@ -11946,7 +12217,7 @@ static int priv_driver_set_wow_par(IN struct net_device *prNetDev,
 	int32_t i4Argc = 0;
 	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
 	int32_t u4Ret = 0;
-	uint8_t	ucWakeupHif = 0, GpioPin = 0, ucGpioLevel = 0, ucBlockCount,
+	uint8_t	ucWakeupHif = 0, GpioPin = 0, ucGpioLevel = 0, ucBlockCount = 0,
 		ucScenario = 0;
 	uint32_t u4GpioTimer = 0;
 
@@ -12207,7 +12478,7 @@ static int priv_driver_get_wow_port(IN struct net_device *prNetDev,
 	int32_t i4Argc = 0;
 	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
 	int32_t u4Ret = 0, ii;
-	uint8_t	ucVer, ucProto;
+	uint8_t	ucVer = 0, ucProto = 0;
 	uint16_t ucCount;
 	uint16_t *pausPortArry;
 	int8_t *aucIp[2] = {"IPv4", "IPv6"};
@@ -12467,6 +12738,146 @@ static int priv_driver_set_mdns_offload_enable(IN struct net_device *prNetDev,
 }
 #endif
 
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+static int priv_driver_set_dhcp_info(IN struct net_device *prNetDev,
+		IN char *pcCommand, IN int i4TotalLen)
+{
+	struct GLUE_INFO *prGlueInfo = NULL;
+	struct BSS_INFO *prBssInfo;
+	int32_t i4BytesWritten = 0;
+	int32_t i4Argc = 0;
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
+	uint8_t aucIpAddr[4];
+	uint8_t i = 0;
+	bool fgIsIpInvalid = FALSE;
+	uint32_t u4Ret = 0;
+	uint32_t u4RenewIntv = 0, u4Value = 0;
+	uint8_t ucLength = 0, ucNum = 0;
+	char *pcTmp, *pcStart;
+	char CurrChar;
+
+	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
+
+	DBGLOG(REQ, LOUD, "command is %s\n", pcCommand);
+	wlanCfgParseArgument(pcCommand, &i4Argc, apcArgv);
+	DBGLOG(REQ, LOUD, "argc is %i\n", i4Argc);
+
+	DBGLOG(REQ, LOUD, "MT7663 : priv_driver_set_dhcp_info\n");
+
+	if (i4Argc != 3) {
+		DBGLOG(REQ, ERROR, "argc %i is not equal to 3\n", i4Argc);
+		goto out;
+	}
+
+	pcStart = apcArgv[1];
+	pcTmp = pcStart;
+	ucLength = strlen(apcArgv[1]);
+
+	while (i < 4) {
+		u4Value = 0;
+
+		while (1) {
+			CurrChar = *pcTmp;
+
+			pcTmp++;
+
+			if (pcTmp > (pcStart + ucLength)) {
+				if (ucNum != 3 && !isdigit(CurrChar)) {
+					DBGLOG(REQ, WARN, "Invalid: Num=%d\n", ucNum+1);
+					fgIsIpInvalid = TRUE;
+				}
+				break;
+			} else if (CurrChar >= '0' && CurrChar <= '9') {
+				u4Value *= 10;
+				u4Value += CurrChar - '0';
+			} else if (i < 3 && CurrChar == '.') {
+				ucNum++;
+				break;
+			} else {
+				if (i != 3 || !isdigit(CurrChar)) {
+					DBGLOG(REQ, WARN, "Invalid\n");
+					fgIsIpInvalid = TRUE;
+				}
+				break;
+			}
+		}
+
+		if (u4Value >= 256) {
+			DBGLOG(REQ, WARN, "Number is larger than 255\n");
+			fgIsIpInvalid = TRUE;
+			break;
+		}
+
+		aucIpAddr[i] = (uint8_t)u4Value;
+		i++;
+	}
+
+	if (fgIsIpInvalid) {
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+			"Dhcp Server IP is invalid");
+		return i4BytesWritten;
+	}
+
+#if 0
+	if (!inet_aton(apcArgv[1], &addr)) {
+		DBGLOG (REQ, STATE, "'%s' is invalid\n", apcArgv[1]);
+		fgIpInvalid = 1;
+		goto out;
+	}
+#endif
+
+	u4Ret = kalkStrtou32(apcArgv[2], 0, &u4RenewIntv);
+	if (u4Ret) {
+		DBGLOG(REQ, WARN, "parse u4LogType error u4Ret=%d\n", u4Ret);
+		goto out;
+	}
+
+	/* TODO: Only support AIS for now */
+	prBssInfo = prGlueInfo->prAdapter->prAisBssInfo;
+
+	if ((prBssInfo->eConnectionState == PARAM_MEDIA_STATE_CONNECTED) &&
+		(prBssInfo->fgIsNetActive) ) {
+		if (u4RenewIntv != 0) {
+			prBssInfo->fgIsDhcpAcked = TRUE ;
+			prBssInfo->u4DhcpRenewIntv = u4RenewIntv;
+
+			for (i = 0; i < 4; i++) {
+				prBssInfo->aucDhcpServerIpAddr[i] = aucIpAddr[i];
+			}
+
+			DBGLOG(REQ, EVENT,
+				"Store DHCP Renew info: ServerIP= %d.%d.%d.%d ,RenewIntv= %d seconds\n",
+				prBssInfo->aucDhcpServerIpAddr[0],
+				prBssInfo->aucDhcpServerIpAddr[1],
+				prBssInfo->aucDhcpServerIpAddr[2],
+				prBssInfo->aucDhcpServerIpAddr[3],
+				prBssInfo->u4DhcpRenewIntv);
+		} else {
+			/* disable dhcp offload if lease time is set to 0 */
+			prBssInfo->fgIsDhcpAcked = FALSE;
+			prBssInfo->u4DhcpRenewIntv = 0;
+			kalMemZero(prBssInfo->aucDhcpServerIpAddr,
+					sizeof(prBssInfo->aucDhcpServerIpAddr));
+			DBGLOG(REQ, EVENT, "Disable Dhcp Offload during STR\n");
+		}
+	} else {
+		DBGLOG(REQ, ERROR, "Cannot set_dhcp when disconnected\n");
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+			"set_dhcp failed due to wifi is disconnected");
+		return i4BytesWritten;
+	}
+
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+			"set_dhcp success");
+	return i4BytesWritten;
+
+out:
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"format:set_dhcp [Dhcp Server IP] [Renew interval]");
+	return i4BytesWritten;
+}
+#endif
+
 static int priv_driver_set_adv_pws(IN struct net_device *prNetDev,
 				   IN char *pcCommand, IN int i4TotalLen)
 {
@@ -12603,7 +13014,7 @@ static int priv_driver_enforce_power_mode(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t i4Ret = 0;
 	uint16_t ucEnforcePowerMode;
 	struct BSS_INFO *prAisBssInfo;
@@ -12825,7 +13236,7 @@ static int priv_driver_ant_diversity_config(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 	uint8_t fgRead = FALSE;
 	uint8_t fgWaitResp = FALSE;
@@ -12991,7 +13402,7 @@ int priv_driver_set_suspend_mode(IN struct net_device *prNetDev,
 {
 	struct GLUE_INFO *prGlueInfo = NULL;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	u_int8_t fgEnable;
 	uint32_t u4Enable = FALSE;
 	int32_t u4Ret = 0;
@@ -13047,7 +13458,7 @@ int priv_driver_set_monitor(IN struct net_device *prNetDev, IN char *pcCommand,
 	uint32_t u4BufLen = 0;
 	int32_t i4Argc = 0;
 	int32_t i4BytesWritten = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	struct PARAM_CUSTOM_MONITOR_SET_STRUCT rMonitorSetInfo;
 	uint8_t ucEnable = 0;
 	uint8_t ucPriChannel = 0;
@@ -13208,8 +13619,8 @@ static int priv_driver_get_sta_index(IN struct net_device *prNetDev,
 	struct ADAPTER *prAdapter;
 	int32_t i4BytesWritten = 0, i4Argc = 0;
 	uint8_t ucStaIdx, ucWlanIndex;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
-	uint8_t aucMacAddr[MAC_ADDR_LEN];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
+	uint8_t aucMacAddr[MAC_ADDR_LEN] = {0};
 
 	ASSERT(prNetDev);
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
@@ -13661,7 +14072,7 @@ static int priv_driver_efuse_ops(IN struct net_device *prNetDev,
 	uint8_t ucOpMode = EFUSE_INVALID;
 	uint8_t ucOpChar;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX];
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Ret;
 	int32_t i4Parameter;
 	uint32_t u4Efuse_addr = 0;
@@ -14113,6 +14524,11 @@ static int priv_driver_get_traffic_report(IN struct net_device
 	cmd->ucBand = ucBand;
 
 	if (strnicmp(apcArgv[1], "ENABLE", strlen("ENABLE")) == 0) {
+		/* TrafficReport Enable cmd is blocked when entering suspend mode */
+		if (prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap & BLOCK_KEEP_FULL_PWR) {
+			DBGLOG(REQ, STATE, "TrafficReport Enable Command is blocked\n");
+			goto get_report_invalid;
+		}
 		prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap
 				|= KEEP_FULL_PWR_TRAFFIC_REPORT_BIT;
 		cmd->ucAction = CMD_GET_REPORT_ENABLE;
@@ -14177,7 +14593,14 @@ static int priv_driver_get_traffic_report(IN struct net_device
 				"\ncommand failed %x", rStatus);
 	else if (cmd->ucAction == CMD_GET_REPORT_GET) {
 		int persentage = 0;
-		int sample_dur = cmd->u4FetchEd - cmd->u4FetchSt;
+		int sample_dur = 0;
+		uint32_t ch_busy = 0;
+		if (cmd->u4FetchEd >= cmd->u4FetchSt) {
+			sample_dur = cmd->u4FetchEd - cmd->u4FetchSt;
+		} else {
+			sample_dur = ((uint32_t)~0U) - cmd->u4FetchSt +
+				1 +  cmd->u4FetchEd;
+		}
 
 		i4BytesWritten += scnprintf(pcCommand + i4BytesWritten,
 						i4TotalLen - i4BytesWritten,
@@ -14223,16 +14646,23 @@ static int priv_driver_get_traffic_report(IN struct net_device
 				"\n\theavy tx threshold %u%% rx threshold %u%%"
 					, cmd->ucTxThres, cmd->ucRxThres);
 		}
+
+		if (sample_dur > cmd->u4ChIdle) {
+			ch_busy = sample_dur - cmd->u4ChIdle;
+		} else {
+			ch_busy = 0;
+		}
+
 		i4BytesWritten += scnprintf(pcCommand + i4BytesWritten,
 						i4TotalLen - i4BytesWritten,
 			"\n\tch_busy %u us, ch_idle %u us, total_period %u us"
-				, sample_dur - cmd->u4ChIdle
+				, ch_busy
 				, cmd->u4ChIdle, sample_dur);
 		i4BytesWritten += scnprintf(pcCommand + i4BytesWritten,
 						i4TotalLen - i4BytesWritten,
 				"\n\tmy_tx_time: %u us"
 				, cmd->u4TxAirTime);
-		if (cmd->u4FetchEd - cmd->u4FetchSt) {
+		if (sample_dur && ((sample_dur / 1000) != 0)){
 			persentage = cmd->u4TxAirTime / (sample_dur / 1000);
 			i4BytesWritten += scnprintf(pcCommand + i4BytesWritten,
 						i4TotalLen - i4BytesWritten,
@@ -14244,7 +14674,7 @@ static int priv_driver_get_traffic_report(IN struct net_device
 						i4TotalLen - i4BytesWritten,
 				"\n\tmy_data_rx_time (no BMC data): %u us"
 				, cmd->u4RxAirTime);
-		if (cmd->u4FetchEd - cmd->u4FetchSt) {
+		if (sample_dur && ((sample_dur / 1000) != 0)) {
 			persentage = cmd->u4RxAirTime / (sample_dur / 1000);
 			i4BytesWritten += scnprintf(pcCommand + i4BytesWritten,
 						i4TotalLen - i4BytesWritten,
@@ -14729,6 +15159,11 @@ static int priv_driver_noise_histogram(IN struct net_device *prNetDev,
 	cmd->u2Len = sizeof(*cmd);
 
 	if (strnicmp(apcArgv[1], "ENABLE", strlen("ENABLE")) == 0) {
+		/* NoiseHistogram Enable cmd is blocked when entering suspend mode */
+		if (prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap & BLOCK_KEEP_FULL_PWR) {
+			DBGLOG(REQ, STATE, "NoiseHistogram Enable Command is blocked\n");
+			goto noise_histogram_invalid;
+		}
 		prGlueInfo->prAdapter->u4IsKeepFullPwrBitmap |=
 			KEEP_FULL_PWR_NOISE_HISTOGRAM_BIT;
 		cmd->ucAction = CMD_NOISE_HISTOGRAM_ENABLE;
@@ -15103,10 +15538,10 @@ static int priv_driver_set_act_intv(
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	int32_t u4Ret = 0;
 	uint32_t u4Id = CMD_SW_DBGCTL_ADVCTL_SET_ID + CMD_ADVCTL_ACT_INTV_ID;
-	uint16_t u2SwitchInterval, u2MeasureInterval;
+	uint16_t u2SwitchInterval = 0, u2MeasureInterval = 0;
 	struct PARAM_CUSTOM_SW_CTRL_STRUCT rSwCtrlInfo;
 
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
@@ -15603,11 +16038,11 @@ static int priv_driver_set_bcn_th(IN struct net_device *prNetDev,
 	uint32_t u4BufLen = 0;
 	int32_t i4BytesWritten = 0;
 	int32_t i4Argc = 0;
-	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = {0};
 	uint32_t u4Id = CMD_SW_DBGCTL_ADVCTL_SET_ID + CMD_ADVCTL_BCN_TH_ID;
 	int32_t i4Ret = 0;
-	int8_t ucP2P, ucInfra, ucWithbt;
-	struct PARAM_CUSTOM_SW_CTRL_STRUCT rSwCtrlInfo;
+	int8_t ucP2P = 0, ucInfra = 0, ucWithbt = 0;
+	struct PARAM_CUSTOM_SW_CTRL_STRUCT rSwCtrlInfo = {0};
 
 	if (GLUE_CHK_PR2(prNetDev, pcCommand) == FALSE)
 		return -1;
@@ -17012,7 +17447,7 @@ static int priv_driver_get_1xtx_status(IN struct net_device *prNetDev,
 		return -EFAULT;
 
 	LOGBUF(pcCommand, i4TotalLen, i4BytesWritten,
-	       "r1xTxDoneStatus is %d\n", prAdapter->r1xTxDoneStatus);
+	       "%d\n", prAdapter->r1xTxDoneStatus);
 
 	return i4BytesWritten;
 }
@@ -17026,7 +17461,7 @@ static int priv_driver_test_1xtx_status(IN struct net_device *prNetDev,
 	int32_t i4Argc = 0;
 	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
 	int32_t i4Ret = 0;
-	uint16_t ucTest1xTxStatus;
+	uint16_t ucTest1xTxStatus = 0;
 
 	DBGLOG(REQ, LOUD, "command is %s\n", pcCommand);
 
@@ -17059,6 +17494,285 @@ static int priv_driver_test_1xtx_status(IN struct net_device *prNetDev,
 
 	return i4BytesWritten;
 }
+
+#if CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
+static int priv_driver_ext_pta_config(IN struct net_device *prNetDev, IN char *pcCommand, IN int i4TotalLen)
+{
+	uint32_t rStatus = WLAN_STATUS_SUCCESS;
+	struct GLUE_INFO *prGlueInfo = NULL;
+	int32_t i4Argc = 0;
+	int8_t *apcArgv[WLAN_CFG_ARGV_MAX] = { 0 };
+	struct CMD_EXT_PTA_CONFIG *cmd = NULL;
+	int32_t i4BytesWritten = 0;
+	uint32_t u4Val = 0;
+	int32_t u4Ret = 0;
+	int32_t i = 0;
+	uint32_t u4BufLen = 0;
+	uint32_t u4TotalReqCnt = 0;
+
+	DBGLOG(REQ, LOUD, "%s(%s)>\n", __func__, pcCommand);
+
+	wlanCfgParseArgument(pcCommand, &i4Argc, apcArgv);
+
+	if (i4Argc < 2) {
+		goto set_ext_pta_invalid;
+	}
+
+	prGlueInfo = *((struct GLUE_INFO **) netdev_priv(prNetDev));
+	if (!prGlueInfo) {
+		goto set_ext_pta_invalid;
+	}
+
+	cmd = (struct CMD_EXT_PTA_CONFIG *)
+			kalMemAlloc(sizeof(struct CMD_GET_TRAFFIC_REPORT), VIR_MEM_TYPE);
+	if (!cmd) {
+		goto set_ext_pta_invalid;
+	}
+
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->u2Type = CMD_EXT_PTA_CONFIG_TYPE;
+	cmd->u2Len = sizeof(*cmd);
+
+	if ((strnicmp(apcArgv[1], "SET", strlen("SET")) == 0) &&
+						  (i4Argc >= 4) && !(i4Argc & 1)) {
+
+		cmd->u2Type |= CMD_ADV_CONTROL_SET;
+
+		/* parsing parameters (data value) */
+		for (i = 2; i < i4Argc; i += 2) {
+
+			/* value field */
+			u4Ret = kalkStrtou32(apcArgv[i+1], 0, &u4Val);
+			if (u4Ret) {
+				i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+					"\nparsing err(%d) %s %s", u4Ret, apcArgv[i], apcArgv[i+1]);
+				goto set_ext_pta_invalid;
+			}
+
+			DBGLOG(REQ, LOUD, "arg[%d] %s %s (0x%x)\n", i, apcArgv[i], apcArgv[i+1], u4Val);
+
+			/* data field*/
+			if (strnicmp(apcArgv[i], "ENABLE", strlen("ENABLE")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_EXT_PTA;
+				cmd->u4ExtPtaConfig = u4Val;
+			} else if (strnicmp(apcArgv[i], "LOTX", strlen("LOTX")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_LO_TX_TAG;
+				cmd->u4ZbLoTxTag = u4Val;
+			} else if (strnicmp(apcArgv[i], "HITX", strlen("HITX")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_HI_TX_TAG;
+				cmd->u4ZbHiTxTag = u4Val;
+			} else if (strnicmp(apcArgv[i], "LORX", strlen("LORX")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_LO_RX_TAG;
+				cmd->u4ZbLoRxTag = u4Val;
+			} else if (strnicmp(apcArgv[i], "HIRX", strlen("HIRX")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_HI_RX_TAG;
+				cmd->u4ZbHiRxTag = u4Val;
+			} else if (strnicmp(apcArgv[i], "COMM_ACT_ZB_BT_UNSAFE", strlen("COMM_ACT_ZB_BT_UNSAFE")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_COMM_ACT_ZB_BT_UNSAFE;
+				cmd->u4CommActZbBtUnsafe= u4Val;
+			} else if (strnicmp(apcArgv[i], "COMM_ACT_ZB_BT_HSF", strlen("COMM_ACT_ZB_BT_HSF")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_COMM_ACT_ZB_BT_HSF;
+				cmd->u4CommActZbBtHsf = u4Val;
+			} else if (strnicmp(apcArgv[i], "COMM_ACT_ZB_WF0_UNSAFE", strlen("COMM_ACT_ZB_WF0_UNSAFE")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_COMM_ACT_ZB_WF0_UNSAFE;
+				cmd->u4CommActZbWf0Unsafe= u4Val;
+			} else if (strnicmp(apcArgv[i], "COMM_ACT_ZB_WF0_HSF", strlen("COMM_ACT_ZB_WF0_HSF")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_COMM_ACT_ZB_WF0_HSF;
+				cmd->u4CommActZbWf0Hsf= u4Val;
+			} else if (strnicmp(apcArgv[i], "COMM_ACT_ZB_WF1_UNSAFE", strlen("COMM_ACT_ZB_WF1_UNSAFE")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_COMM_ACT_ZB_WF1_UNSAFE;
+				cmd->u4CommActZbWf1Unsafe= u4Val;
+			} else if (strnicmp(apcArgv[i], "COMM_ACT_ZB_WF1_HSF", strlen("COMM_ACT_ZB_WF1_HSF")) == 0) {
+				cmd->u4ConfigMask |= CMD_EXT_PTA_CONFIG_COMM_ACT_ZB_WF1_HSF;
+				cmd->u4CommActZbWf1Hsf= u4Val;
+			} else {
+				i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+					"\nunknown parameter %s %s", apcArgv[i], apcArgv[i+1]);
+				goto set_ext_pta_invalid;
+			}
+		}
+
+		/* send to FW */
+		rStatus = wlanSendSetQueryCmd(prGlueInfo->prAdapter,
+			CMD_ID_ADV_CONTROL,
+			TRUE,
+			FALSE,
+			FALSE,
+			NULL,
+			NULL,
+			sizeof(*cmd),
+			(uint8_t *) cmd,
+			NULL,
+			0);
+	}
+	else if (strnicmp(apcArgv[1], "GET", strlen("GET")) == 0) {
+		rStatus = kalIoctl(prGlueInfo,
+						wlanoidAdvCtrl,
+						cmd,
+						sizeof(*cmd),
+						TRUE,
+						TRUE,
+						TRUE,
+						&u4BufLen);
+	}
+	else {
+		goto set_ext_pta_invalid;
+	}
+
+	if ((rStatus != WLAN_STATUS_SUCCESS) && (rStatus != WLAN_STATUS_PENDING)) {
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+			"\ncommand failed %x", rStatus);
+	}
+	else if (!(cmd->u2Type & CMD_ADV_CONTROL_SET)) {
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\nPriority stat:");
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB Lo TX : %d", cmd->u4ZbLoTxTag);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB Hi TX : %d", cmd->u4ZbHiTxTag);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB Lo RX : %d", cmd->u4ZbLoRxTag);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB Hi RX : %d", cmd->u4ZbHiRxTag);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n BT : %d TX(%d) RX(%d)", cmd->u4BtTag & BITS(0, 15),
+				(cmd->u4BtTag & BITS(24, 31)) >> 24, (cmd->u4BtTag & BITS(16, 23)) >> 16);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0 : %d TX(%d) RX(%d)", cmd->u4Wf0Tag & BITS(0, 15),
+				(cmd->u4Wf0Tag & BITS(24, 31)) >> 24, (cmd->u4Wf0Tag & BITS(16, 23)) >> 16);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1 : %d TX(%d) RX(%d)", cmd->u4Wf1Tag & BITS(0, 15),
+				(cmd->u4Wf1Tag & BITS(24, 31)) >> 24, (cmd->u4Wf1Tag & BITS(16, 23)) >> 16);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\nCommon action stat (1:allow, 0:not allow):");
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Unsafe arb mode");
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_TX vs BT_RX[b0]: %d", (cmd->u4CommActZbBtUnsafe & BIT(0)) >> 0);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_RX vs BT_TX[b1]: %d", (cmd->u4CommActZbBtUnsafe & BIT(1)) >> 1);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_RX vs BT_RX[b2]: %d", (cmd->u4CommActZbBtUnsafe & BIT(2)) >> 2);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_TX vs BT_TX[b3]: %d\n", (cmd->u4CommActZbBtUnsafe & BIT(3)) >> 3);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_TX vs ZB_RX[b0]: %d", (cmd->u4CommActZbWf0Unsafe & BIT(0)) >> 0);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_RX vs ZB_TX[b1]: %d", (cmd->u4CommActZbWf0Unsafe & BIT(1)) >> 1);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_RX vs ZB_RX[b2]: %d", (cmd->u4CommActZbWf0Unsafe & BIT(2)) >> 2);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_TX vs ZB_TX[b3]: %d\n", (cmd->u4CommActZbWf0Unsafe & BIT(3)) >> 3);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_TX vs ZB_RX[b0]: %d", (cmd->u4CommActZbWf1Unsafe & BIT(0)) >> 0);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_RX vs ZB_TX[b1]: %d", (cmd->u4CommActZbWf1Unsafe & BIT(1)) >> 1);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_RX vs ZB_RX[b2]: %d", (cmd->u4CommActZbWf1Unsafe & BIT(2)) >> 2);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_TX vs ZB_TX[b3]: %d\n", (cmd->u4CommActZbWf1Unsafe & BIT(3)) >> 3);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n half-safe arb mode");
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_TX vs BT_RX[b0]: %d", (cmd->u4CommActZbBtHsf & BIT(0)) >> 0);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_RX vs BT_TX[b1]: %d", (cmd->u4CommActZbBtHsf & BIT(1)) >> 1);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_RX vs BT_RX[b2]: %d", (cmd->u4CommActZbBtHsf & BIT(2)) >> 2);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n ZB_TX vs BT_TX[b3]: %d\n", (cmd->u4CommActZbBtHsf & BIT(3)) >> 3);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_TX vs ZB_RX[b0]: %d", (cmd->u4CommActZbWf0Hsf & BIT(0)) >> 0);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_RX vs ZB_TX[b1]: %d", (cmd->u4CommActZbWf0Hsf & BIT(1)) >> 1);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_RX vs ZB_RX[b2]: %d", (cmd->u4CommActZbWf0Hsf & BIT(2)) >> 2);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF0_TX vs ZB_TX[b3]: %d\n", (cmd->u4CommActZbWf0Hsf & BIT(3)) >> 3);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_TX vs ZB_RX[b0]: %d", (cmd->u4CommActZbWf1Hsf & BIT(0)) >> 0);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_RX vs ZB_TX[b1]: %d", (cmd->u4CommActZbWf1Hsf & BIT(1)) >> 1);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_RX vs ZB_RX[b2]: %d", (cmd->u4CommActZbWf1Hsf & BIT(2)) >> 2);
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n WF1_TX vs ZB_TX[b3]: %d", (cmd->u4CommActZbWf1Hsf & BIT(3)) >> 3);
+
+		if (cmd->u4ConfigMask & CMD_EXT_PTA_CONFIG_EXT_PTA) {
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\nCounter stat:");
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Grant cnt: %d", cmd->u4ZbGntCnt);
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Abort cnt: %d", cmd->u4ZbAbtCnt);
+
+			u4TotalReqCnt = cmd->u4ZbLoTxReqCnt + cmd->u4ZbHiTxReqCnt +
+					cmd->u4ZbLoRxReqCnt + cmd->u4ZbHiRxReqCnt;
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Denied cnt: %d", u4TotalReqCnt - cmd->u4ZbGntCnt);
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Lo tx req cnt: %d", cmd->u4ZbLoTxReqCnt);
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Hi tx req cnt: %d", cmd->u4ZbHiTxReqCnt);
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Lo rx req cnt: %d", cmd->u4ZbLoRxReqCnt);
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Hi rx req cnt: %d", cmd->u4ZbHiRxReqCnt);
+		}
+		else {
+			i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n Counters not enabled");
+		}
+	}
+	else
+		i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\ncommand sent %x", rStatus);
+
+	if (cmd)
+		kalMemFree(cmd, VIR_MEM_TYPE, sizeof(struct CMD_EXT_PTA_CONFIG));
+
+	return i4BytesWritten;
+
+set_ext_pta_invalid:
+	if (cmd)
+		kalMemFree(cmd, VIR_MEM_TYPE, sizeof(struct CMD_EXT_PTA_CONFIG));
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\nformat:ext_pta_config set [enable 1|0][lotx val][hitx val]");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n\t[lorx val][hirx val]");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n\t[comm_act_zb_bt_unsafe val][comm_act_zb_bt_hsf val]");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n\t[comm_act_zb_wf0_unsafe val][comm_act_zb_wf0_hsf val]");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n\t[comm_act_zb_wf1_unsafe val][comm_act_zb_wf1_hsf val]");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [enable val]: enable EXT PTA(1) or not(0)");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [lotx val<0~15>]: priority tag for lo tx");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [hitx val<0~15>]: priority tag for hi tx");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [lorx val<0~15>]: priority tag for lo rx");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [hirx val<0~15>]: priority tag for lo tx");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [comm_act_zb_bt_unsafe val<0~15>]: zb&bt unsafe common action");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [comm_act_zb_bt_hsf val<0~15>]: zb&bt hsf common action");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [comm_act_zb_wf0_unsafe val<0~15>]: zb&wf0 unsafe common action");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [comm_act_zb_wf0_hsf val<0~15>]: zb&wf0 hsf common action");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [comm_act_zb_wf1_unsafe val<0~15>]: zb&wf1 unsafe common action");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\n [comm_act_zb_wf1_hsf val<0~15>]: zb&wf1 hsf common action");
+	i4BytesWritten += snprintf(pcCommand + i4BytesWritten, i4TotalLen - i4BytesWritten,
+				"\nformat(%d):pta_config get", i4Argc);
+	return i4BytesWritten;
+}
+#endif
 
 int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 			 IN int32_t i4TotalLen)
@@ -17316,6 +18030,13 @@ int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 			kalShowMdnsCache();
 
 #endif
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+		else if (strnicmp(pcCommand, CMD_SET_DHCP_INFO,
+			 strlen(CMD_SET_DHCP_INFO)) == 0)
+			i4BytesWritten = priv_driver_set_dhcp_info(
+							prNetDev, pcCommand,
+							i4TotalLen);
+#endif
 		else if (strnicmp(pcCommand, CMD_SET_ADV_PWS,
 			 strlen(CMD_SET_ADV_PWS)) == 0)
 			i4BytesWritten = priv_driver_set_adv_pws(
@@ -17434,6 +18155,10 @@ int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 			i4BytesWritten = priv_driver_set_fw_log(prNetDev,
 							pcCommand, i4TotalLen);
 #endif
+		else if (strnicmp(pcCommand, CMD_GET_MAGIC_PKT_INFO,
+			strlen(CMD_GET_MAGIC_PKT_INFO)) == 0)
+			i4BytesWritten = priv_driver_get_magic_pkt_info(prNetDev,
+							pcCommand, i4TotalLen);
 		else if (strnicmp(pcCommand, CMD_SET_CFG,
 			 strlen(CMD_SET_CFG)) == 0) {
 			i4BytesWritten = priv_driver_set_cfg(prNetDev,
@@ -17853,6 +18578,12 @@ int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 						strlen(CMD_WIFI_DISABLE_TEST)) == 0) {
 			i4BytesWritten = priv_driver_disable_test(prNetDev,
 						pcCommand, i4TotalLen);
+#if CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
+		} else if (strnicmp(pcCommand, CMD_EXT_PTA_CFG,
+					strlen(CMD_EXT_PTA_CFG)) == 0) {
+			i4BytesWritten = priv_driver_ext_pta_config(prNetDev,
+						pcCommand, i4TotalLen);
+#endif
 #if CFG_abc123_CMD_BUF_DEBUG
 		} else if (strnicmp(pcCommand, CMD_PRINT_CMD_BUF,
 						strlen(CMD_PRINT_CMD_BUF)) == 0) {
@@ -17868,7 +18599,7 @@ int32_t priv_driver_cmds(IN struct net_device *prNetDev, IN int8_t *pcCommand,
 			i4BytesWritten = priv_driver_test_1xtx_status(prNetDev,
 						pcCommand, i4TotalLen);
 		else
-				i4BytesWritten = priv_cmd_not_support
+			i4BytesWritten = priv_cmd_not_support
 				(prNetDev, pcCommand, i4TotalLen);
 
 	if (i4BytesWritten >= 0) {

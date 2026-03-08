@@ -514,6 +514,8 @@
 /* TODO: it should be 4096 under emulation mode */
 #define CFG_RX_MAX_PKT_SIZE	(28 + 2312 + 12 /*HIF_RX_HEADER_T*/)
 
+#define CFG_RX_MAX_MPDU_SIZE	CFG_RX_MAX_PKT_SIZE
+
 /*! Minimum RX packet size, if lower than this value, drop incoming packet */
 #define CFG_RX_MIN_PKT_SIZE	10 /*!< 802.11 Control Frame is 10 bytes */
 
@@ -1437,6 +1439,18 @@
 
 #ifndef CFG_FTV_62866_PATCH
 #define CFG_FTV_62866_PATCH 0
+#endif
+
+#ifndef CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
+#define CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND 0
+#endif
+
+/*------------------------------------------------------------------------------
+ * Support DHCP renew offload
+ *------------------------------------------------------------------------------
+ */
+#ifndef CFG_STR_DHCP_RENEW_OFFLOAD
+#define CFG_STR_DHCP_RENEW_OFFLOAD 0
 #endif
 
 /*------------------------------------------------------------------------------

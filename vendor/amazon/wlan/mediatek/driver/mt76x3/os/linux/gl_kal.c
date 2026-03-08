@@ -733,8 +733,8 @@ void kalUpdateMACAddress(IN struct GLUE_INFO *prGlueInfo,
 
 	if (UNEQUAL_MAC_ADDR(prGlueInfo->prDevHandler->dev_addr,
 			     pucMacAddr))
-		memcpy(prGlueInfo->prDevHandler->dev_addr, pucMacAddr,
-		       PARAM_MAC_ADDR_LEN);
+		kal_eth_hw_addr_set(prGlueInfo->prDevHandler,
+			pucMacAddr);
 
 }
 
@@ -1194,10 +1194,14 @@ uint32_t kalRxIndicateOnePkt(IN struct GLUE_INFO
 	}
 #endif /* CFG_RX_NAPI_SUPPORT */
 
+#if KERNEL_VERSION(5, 18, 0) <= CFG80211_VERSION_CODE
+		netif_rx(prSkb);
+#else
 	if (!in_interrupt())
 		netif_rx_ni(prSkb);	/* only in non-interrupt context */
 	else
 		netif_rx(prSkb);
+#endif
 
 	return WLAN_STATUS_SUCCESS;
 }
@@ -1249,7 +1253,7 @@ kalIndicateStatusAndComplete(IN struct GLUE_INFO
 			     IN uint32_t u4BufLen, IN uint8_t ucBssIndex)
 {
 
-	uint32_t bufLen;
+	uint32_t bufLen = 0;
 	struct PARAM_STATUS_INDICATION *pStatus;
 	struct PARAM_AUTH_EVENT *pAuth;
 	struct PARAM_PMKID_CANDIDATE_LIST *pPmkid;
@@ -1280,6 +1284,10 @@ kalIndicateStatusAndComplete(IN struct GLUE_INFO
 	pPmkid = (struct PARAM_PMKID_CANDIDATE_LIST *)(pStatus + 1);
 
 	prDevHandler = kalGetNetDev(prGlueInfo, ucBssIndex);
+	if (!prDevHandler) {
+		DBGLOG(INIT, ERROR, "kalGetNetDev fail %d\n", ucBssIndex);
+		return;
+	}
 
 	switch (eStatus) {
 	case WLAN_STATUS_ROAM_OUT_FIND_BEST:
@@ -1456,7 +1464,11 @@ kalIndicateStatusAndComplete(IN struct GLUE_INFO
 			/* CFG80211 Indication */
 			if (eStatus == WLAN_STATUS_ROAM_OUT_FIND_BEST) {
 #if KERNEL_VERSION(4, 12, 0) <= CFG80211_VERSION_CODE
+#if KERNEL_VERSION(6, 0, 0) <= CFG80211_VERSION_CODE
+				rRoamInfo.links[0].bss = bss;
+#else
 				rRoamInfo.bss = bss;
+#endif
 				rRoamInfo.req_ie = prGlueInfo->aucReqIe;
 				rRoamInfo.req_ie_len =
 				prGlueInfo->u4ReqIeLength;
@@ -2865,6 +2877,7 @@ static int32_t kalThreadSchedRetrieve(struct task_struct *pThread,
 {
 #ifdef CONFIG_SCHEDSTATS
 	struct sched_entity se;
+	struct sched_statistics *stats;
 	unsigned long long sec;
 	unsigned long usec;
 
@@ -2879,11 +2892,16 @@ static int32_t kalThreadSchedRetrieve(struct task_struct *pThread,
 
 	memcpy(&se, &pThread->se, sizeof(struct sched_entity));
 	kalGetLocalTime(&sec, &usec);
+#if KERNEL_VERSION(5, 16, 0) <= LINUX_VERSION_CODE
+	stats = &pThread->stats;
+#else
+	stats = &pThread->se.statistics;
+#endif
 
 	pSched->time = sec*1000 + usec/1000;
 	pSched->exec = se.sum_exec_runtime;
-	pSched->runnable = se.statistics.wait_sum;
-	pSched->iowait = se.statistics.iowait_sum;
+	pSched->runnable = stats->wait_sum;
+	pSched->iowait = stats->iowait_sum;
 
 	return 0;
 #else
@@ -2986,11 +3004,12 @@ kalIoctl(IN struct GLUE_INFO *prGlueInfo,
 		return WLAN_STATUS_SUCCESS;
 #endif
 
+	if (!prGlueInfo || !(prGlueInfo->prAdapter)) {
+		return WLAN_STATUS_FAILURE;
+	}
+
 	if (wlanIsChipAssert(prGlueInfo->prAdapter))
 		return WLAN_STATUS_SUCCESS;
-
-	/* GLUE_SPIN_LOCK_DECLARATION(); */
-	ASSERT(prGlueInfo);
 
 	/* Just direct function call if already
 	*  in main_thread or interrupt context
@@ -3049,7 +3068,16 @@ kalIoctl(IN struct GLUE_INFO *prGlueInfo,
 	/* <6> Check if we use the command queue */
 	prIoReq->u4Flag = fgCmd;
 
-	/* <7> schedule the OID bit */
+	if (prGlueInfo->rPendComp.done > 1)
+		DBGLOG(INIT, WARN, "[%pf] abnormal done(%d) field in prGlueInfo->rPendComp\n",
+					pfnOidHandler, prGlueInfo->rPendComp.done);
+	reinit_completion(&prGlueInfo->rPendComp);
+
+	/* <7> schedule the OID bit
+	 * Use memory barrier to ensure OidEntry is written done and then set
+	 * bit.
+	 */
+	smp_mb();
 	set_bit(GLUE_FLAG_OID_BIT, &prGlueInfo->ulFlag);
 
 	/* <7.1> Hold wakelock to ensure OS won't be suspended */
@@ -3057,7 +3085,11 @@ kalIoctl(IN struct GLUE_INFO *prGlueInfo,
 		&prGlueInfo->rTimeoutWakeLock, MSEC_TO_JIFFIES(
 		prGlueInfo->prAdapter->rWifiVar.u4WakeLockThreadWakeup));
 
-	/* <8> Wake up tx thread to handle kick start the I/O request */
+	/* <8> Wake up main thread to handle kick start the I/O request.
+	 * Use memory barrier to ensure set bit is done and then wake up main
+	 * thread.
+	 */
+	smp_mb();
 	wake_up_interruptible(&prGlueInfo->waitq);
 
 	/* <9> Block and wait for event or timeout,
@@ -4237,7 +4269,6 @@ static int idme_get_mac_addr(unsigned char *mac_addr, size_t addr_len)
 	unsigned char buf[IFHWADDRLEN * 2 + 1] = {""}, str[3] = {""};
 	int i, mac[IFHWADDRLEN];
 	struct file *f;
-	size_t len;
 
 	if (!mac_addr || addr_len < IFHWADDRLEN) {
 		DBGLOG(INIT, ERROR, "invalid mac_addr ptr or buf\n");
@@ -4260,8 +4291,7 @@ static int idme_get_mac_addr(unsigned char *mac_addr, size_t addr_len)
 		str[1] = buf[i * 2 + 1];
 		if (!isxdigit(str[0]) || !isxdigit(str[1]))
 			goto bailout;
-		len = sscanf(str, "%02x", &mac[i]);
-		if (len != 1)
+		if (kstrtoint(str, 16, &mac[i]))
 			goto bailout;
 	}
 	for (i = 0; i < IFHWADDRLEN; i++)
@@ -5223,8 +5253,9 @@ struct file *kalFileOpen(const char *path, int flags,
 			 int rights)
 {
 	struct file *filp = NULL;
-	mm_segment_t oldfs;
 	int err = 0;
+#if (KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE) || defined(CONFIG_SET_FS)
+	mm_segment_t oldfs;
 
 	oldfs = get_fs();
 #if KERNEL_VERSION(5, 1, 0) <= LINUX_VERSION_CODE
@@ -5232,8 +5263,12 @@ struct file *kalFileOpen(const char *path, int flags,
 #else
 	set_fs(get_ds());
 #endif
+#endif /* 5.15 no config_set_fs don't care kernel range */
+
 	filp = filp_open(path, flags, rights);
+#if (KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE) || defined(CONFIG_SET_FS)
 	set_fs(oldfs);
+#endif /* 5.15 no config_set_fs don't care kernel range */
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
 		return NULL;
@@ -6225,6 +6260,7 @@ u_int8_t kalMetCheckProfilingPacket(IN struct GLUE_INFO
 	return FALSE;
 }
 
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
 static unsigned long __read_mostly tracing_mark_write_addr;
 
 static int __mt_find_tracing_mark_write_symbol_fn(
@@ -6237,12 +6273,15 @@ static int __mt_find_tracing_mark_write_symbol_fn(
 	}
 	return 0;
 }
+#endif
 
 static inline void __mt_update_tracing_mark_write_addr(void)
 {
+#if KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE
 	if (unlikely(tracing_mark_write_addr == 0))
 		kallsyms_on_each_symbol(
 			__mt_find_tracing_mark_write_symbol_fn, NULL);
+#endif
 }
 
 void kalMetTagPacket(IN struct GLUE_INFO *prGlueInfo,
@@ -6374,7 +6413,7 @@ static ssize_t kalMetPortWriteProcfs(struct file *file,
 {
 	char acBuf[128 + 1];	/* + 1 for "\0" */
 	uint32_t u4CopySize;
-	int u16MetUdpPort;
+	int u16MetUdpPort = 0;
 
 	IN struct GLUE_INFO *prGlueInfo;
 
@@ -6401,6 +6440,7 @@ const struct file_operations rMetProcFops = {
 	.write = kalMetWriteProcfs
 };
 #endif
+#if KERNEL_VERSION(5, 5, 0) >= LINUX_VERSION_CODE
 const struct file_operations rMetProcCtrlFops = {
 	.write = kalMetCtrlWriteProcfs
 };
@@ -6408,6 +6448,15 @@ const struct file_operations rMetProcCtrlFops = {
 const struct file_operations rMetProcPortFops = {
 	.write = kalMetPortWriteProcfs
 };
+#else
+const struct proc_ops rMetProcCtrlFops = {
+	.proc_write = kalMetCtrlWriteProcfs
+};
+
+const struct proc_ops rMetProcPortFops = {
+	.proc_write = kalMetPortWriteProcfs
+};
+#endif
 
 int kalMetInitProcfs(IN struct GLUE_INFO *prGlueInfo)
 {
@@ -6809,7 +6858,7 @@ void kalWowProcess(IN struct GLUE_INFO *prGlueInfo,
 		wait++;
 	}
 
-	/* ARP offload. move to last command */
+	/* ARP and DHCP offload. move to last command */
 	wlanSetSuspendMode(prGlueInfo, enable);
 
 	wlanSendDummyCmd(prGlueInfo->prAdapter, TRUE);
@@ -6991,6 +7040,11 @@ bool kalParseMdnsRespPkt(uint8_t *pucMdnsHdr,
 	DBGLOG(SW4, LOUD, "txt type %d class %d ttl %d datalen %d\n",
 			resp->txtInfo.type, resp->txtInfo.cl,
 			resp->txtInfo.ttl, resp->txtInfo.dataLen);
+
+	if (resp->txtInfo.dataLen > MDNS_TXT_RR_DATA_MAX_LEN) {
+		DBGLOG(SW4, LOUD, "txt datalen too large\n");
+		return FALSE;
+	}
 
 	pos += 2;
 	kalMemCopy(resp->txtInfo.text,
@@ -7674,6 +7728,10 @@ void kalFreeTxMsduWorker(struct work_struct *work)
 
 	while (QUEUE_IS_NOT_EMPTY(prTmpQue)) {
 		QUEUE_REMOVE_HEAD(prTmpQue, prMsduInfo, struct MSDU_INFO *);
+		if (!prMsduInfo) {
+			DBGLOG(REQ, WARN, "prMsduInfo is NULL\n");
+			break;
+		}
 
 		wlanTxProfilingTagMsdu(prAdapter, prMsduInfo,
 				       TX_PROF_TAG_DRV_FREE_MSDU);
@@ -8438,7 +8496,7 @@ void kalIndicateChannelSwitch(IN struct GLUE_INFO *prGlueInfo,
 				IN enum ENUM_CHNL_EXT eSco,
 				IN uint8_t ucChannelNum)
 {
-	struct cfg80211_chan_def chandef;
+	struct cfg80211_chan_def chandef = {0};
 	struct ieee80211_channel *prChannel = NULL;
 	enum nl80211_channel_type rChannelType;
 
@@ -8481,7 +8539,14 @@ void kalIndicateChannelSwitch(IN struct GLUE_INFO *prGlueInfo,
 	DBGLOG(REQ, STATE, "DFS channel switch to %d\n", ucChannelNum);
 
 	cfg80211_chandef_create(&chandef, prChannel, rChannelType);
-	cfg80211_ch_switch_notify(prGlueInfo->prDevHandler, &chandef);
+	cfg80211_ch_switch_notify(prGlueInfo->prDevHandler, &chandef
+#if KERNEL_VERSION(5, 19, 2) <= CFG80211_VERSION_CODE
+		, 0
+#endif
+#if KERNEL_VERSION(6, 3, 0) <= CFG80211_VERSION_CODE
+		, 0
+#endif
+		);
 }
 #endif
 
@@ -8861,11 +8926,16 @@ int kalRxNapiPoll(struct napi_struct *napi, int budget)
 			break;
 
 #if IS_ENABLED(CFG_GRO_SUPPORT)
+#if KERNEL_VERSION(5, 15, 0) <= CFG80211_VERSION_CODE
+		napi_gro_receive(napi, prSkb);
+#else
 		if (napi_gro_receive(napi, prSkb) == GRO_DROP)
+			ucAccept = FALSE;
+#endif
 #else
 		if (netif_receive_skb(prSkb) != NET_RX_SUCCESS)
-#endif /* CFG_GRO_SUPPORT */
 			ucAccept = FALSE;
+#endif /* CFG_GRO_SUPPORT */
 
 		if (ucAccept)
 			work_done++;
@@ -8904,6 +8974,38 @@ void kal_kallsyms_put(const char *name)
 {
 	DBGLOG(INIT, INFO, "%s(%s)\r\n", __func__, name);
 	__symbol_put(name);
+}
+
+void kal_sched_set(struct task_struct *p, int policy,
+		const struct sched_param *param,
+		int nice)
+{
+#if !defined(CONFIG_ANDROID) && (KERNEL_VERSION(5, 9, 0) <= LINUX_VERSION_CODE)
+	/* apply auto-detection based on function description
+	* TODO:
+	* kernel prefer modify "current" only, add sanity here?
+	*/
+
+#if KERNEL_VERSION(5, 14, 0) <= LINUX_VERSION_CODE
+	struct sched_attr attr = {
+		.sched_policy = policy,
+		.sched_priority = param->sched_priority,
+		.sched_nice = nice,
+	};
+
+	sched_setattr_nocheck(p, &attr);
+#else
+	if (policy == SCHED_NORMAL)
+		sched_set_normal(p, nice);
+	else if (policy == SCHED_FIFO)
+		sched_set_fifo(p);
+	else
+		sched_set_fifo_low(p);
+#endif /* KERNEL_VERSION(5, 14, 0) <= LINUX_VERSION_CODE */
+
+#else
+	sched_setscheduler(p, policy, param);
+#endif
 }
 
 #ifdef CONFIG_PM_SLEEP

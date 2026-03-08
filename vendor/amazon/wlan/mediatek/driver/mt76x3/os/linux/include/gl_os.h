@@ -340,7 +340,8 @@ extern void wifi_fwlog_event_func_register(wifi_fwlog_event_func_cb pfFwlog);
 #define WLAN_AKM_SUITE_SAE		0x000FAC08
 #endif
 #endif
-#if CFG_SUPPORT_OWE
+#if CFG_SUPPORT_OWE && \
+	KERNEL_VERSION(5, 7, 0) > CFG80211_VERSION_CODE
 #define WLAN_AKM_SUITE_OWE		0x000FAC12
 #endif
 
@@ -370,7 +371,6 @@ struct GL_WPA_INFO {
 	uint32_t u4Mfp;
 	uint8_t ucRSNMfpCap;
 #endif
-	uint8_t ucRsneLen;
 	uint8_t aucKek[NL80211_KEK_LEN];
 	uint8_t aucKck[NL80211_KCK_LEN];
 	uint8_t aucReplayCtr[NL80211_REPLAY_CTR_LEN];
@@ -558,6 +558,11 @@ struct GLUE_INFO {
 	volatile unsigned long ulFlag;		/* GLUE_FLAG_XXX */
 	uint32_t u4PendFlag;
 	uint32_t u4LinkDownPendFlag;
+
+#if (CFG_SUPPORT_CFG80211_AUTH == 1)
+	u_int8_t fgSuppSmeLinkDownPend;
+#endif
+
 	/* UINT_32 u4TimeoutFlag; */
 	uint32_t u4OidCompleteFlag;
 	uint32_t u4ReadyFlag;	/* check if card is ready */

@@ -688,12 +688,13 @@ void aisFsmStateInit_JOIN(IN struct ADAPTER *prAdapter,
 	} else {
 		ASSERT(prBssDesc->eBSSType == BSS_TYPE_INFRASTRUCTURE);
 
-		DBGLOG(AIS, LOUD, "JOIN INIT: AUTH TYPE = %d for Roaming\n",
-		       prAisSpecificBssInfo->ucRoamingAuthTypes);
-
 		/* We do roaming while the medium is connected */
 		prStaRec->fgIsReAssoc = TRUE;
 
+#if (CFG_SUPPORT_CFG80211_AUTH == 1)
+		prAisFsmInfo->ucAvailableAuthTypes =
+			(uint8_t) prAdapter->prGlueInfo->rWpaInfo.u4AuthAlg;
+#else
 		/* TODO(Kevin): We may call a sub function to
 		 * acquire the Roaming Auth Type
 		 */
@@ -709,6 +710,9 @@ void aisFsmStateInit_JOIN(IN struct ADAPTER *prAdapter,
 			    prAisSpecificBssInfo->ucRoamingAuthTypes;
 			break;
 		}
+#endif
+		DBGLOG(AIS, INFO, "JOIN INIT: Auth Algorithm for Roaming:%d\n",
+			prAisFsmInfo->ucAvailableAuthTypes);
 
 		prStaRec->ucTxAuthAssocRetryLimit =
 		    TX_AUTH_ASSOCI_RETRY_LIMIT_FOR_ROAMING;
@@ -760,7 +764,10 @@ void aisFsmStateInit_JOIN(IN struct ADAPTER *prAdapter,
 		prStaRec->ucAuthAlgNum = (uint8_t) AUTH_ALGORITHM_NUM_SAE;
 #endif
 	} else {
-		ASSERT(0);
+		DBGLOG(AIS, ERROR,
+		       "JOIN INIT: Unsupported auth type %d\n",
+		       prAisFsmInfo->ucAvailableAuthTypes);
+		return;
 	}
 
 	/* 4 <5> Overwrite Connection Setting for eConnectionPolicy
@@ -1299,12 +1306,22 @@ void aisFsmSteps(IN struct ADAPTER *prAdapter, enum ENUM_AIS_STATE eNextState)
 			prAisFsmInfo->u4SleepInterval =
 			    AIS_BG_SCAN_INTERVAL_MIN_SEC;
 
+			if (prAdapter->rWifiVar.rAisFsmInfo.fgIsReqDisconnectPending)
+				prAdapter->rWifiVar.rAisFsmInfo.fgIsReqDisconnectPending = FALSE;
 
 			if (prGlueInfo->u4LinkDownPendFlag == TRUE) {
 				prGlueInfo->u4LinkDownPendFlag = FALSE;
 				kalOidComplete(prAdapter->prGlueInfo,
 					TRUE, 0, WLAN_STATUS_SUCCESS);
 			}
+
+#if (CFG_SUPPORT_CFG80211_AUTH == 1)
+			if (prGlueInfo->fgSuppSmeLinkDownPend == TRUE) {
+				prGlueInfo->fgSuppSmeLinkDownPend = FALSE;
+				kalOidComplete(prAdapter->prGlueInfo,
+					TRUE, 0, WLAN_STATUS_SUCCESS);
+			}
+#endif
 			break;
 
 		case AIS_STATE_SEARCH:
@@ -2167,9 +2184,6 @@ void aisFsmSteps(IN struct ADAPTER *prAdapter, enum ENUM_AIS_STATE eNextState)
 
 			prConnSettings->fgIsDisconnectedByNonRequest = TRUE;
 
-			/* Reset WPA info */
-			prGlueInfo->rWpaInfo.u4AuthAlg = 0;
-
 			eNextState = AIS_STATE_IDLE;
 			fgIsTransition = TRUE;
 
@@ -2251,9 +2265,6 @@ void aisFsmSteps(IN struct ADAPTER *prAdapter, enum ENUM_AIS_STATE eNextState)
 					   (prAisFsmInfo->fgIsScanning
 					    || prAisBssInfo->fgIsNetAbsent) ?
 					   1000 : 100);
-
-			/* Reset WPA info */
-			prGlueInfo->rWpaInfo.u4AuthAlg = 0;
 
 			break;
 
@@ -2840,6 +2851,8 @@ void aisFsmStateAbort(IN struct ADAPTER *prAdapter,
 			prAisBssInfo->ucReasonOfDisconnect ==
 			DISCONNECT_REASON_CODE_NEW_CONNECTION &&
 #endif
+			prAisBssInfo->ucReasonOfDisconnect !=
+						DISCONNECT_REASON_CODE_DEAUTHENTICATED &&
 			prAisBssInfo->prStaRecOfAP &&
 			prAisBssInfo->prStaRecOfAP->fgIsInUse) {
 			aisFsmSteps(prAdapter, AIS_STATE_DISCONNECTING);
@@ -3183,7 +3196,7 @@ enum ENUM_AIS_STATE aisFsmJoinCompleteAction(IN struct ADAPTER *prAdapter,
 					if (prConnSettings->eConnectionPolicy
 					    == CONNECT_BY_BSSID
 					    && prBssDesc->u2JoinStatus) {
-						uint32_t u4InfoBufLen = 0;
+
 						/* For framework roaming case,
 						 * if authentication is
 						 * rejected, need to make
@@ -3195,13 +3208,14 @@ enum ENUM_AIS_STATE aisFsmJoinCompleteAction(IN struct ADAPTER *prAdapter,
 						 * driver and supplicant will
 						 * be not synchronized.
 						 */
-						wlanoidSetDisassociate
-						    (prAdapter, NULL, 0,
-						     &u4InfoBufLen);
+						wlanSetDisassociate (prAdapter,
+								DISCONNECT_REASON_CODE_NEW_CONNECTION);
 						eNextState =
 						    prAisFsmInfo->eCurrentState;
 						break;
 					}
+					memset(&rSsid, 0,
+						sizeof(struct PARAM_SSID));
 					COPY_SSID(rSsid.aucSsid,
 						  rSsid.u4SsidLen,
 						  prAisBssInfo->aucSSID,
@@ -3923,6 +3937,7 @@ void aisUpdateBssInfoForJOIN(IN struct ADAPTER *prAdapter,
 	prAisBssInfo->fgIsQBSS = prStaRec->fgIsQoS;
 
 	/* 3 <4> Update BSS_INFO_T from BSS_DESC_T */
+	memset(&rSsid, 0, sizeof(struct PARAM_SSID));
 	prBssDesc = prAisFsmInfo->prTargetBssDesc;
 	if (prBssDesc)
 		COPY_SSID(rSsid.aucSsid, rSsid.u4SsidLen,
@@ -4500,6 +4515,15 @@ void aisFsmDisconnect(IN struct ADAPTER *prAdapter,
 	if (prAisBssInfo->ucReasonOfDisconnect !=
 	    DISCONNECT_REASON_CODE_REASSOCIATION) {
 		aisChangeMediaState(prAdapter, PARAM_MEDIA_STATE_DISCONNECTED);
+
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+		if (prAisBssInfo->fgIsDhcpAcked) {
+			prAisBssInfo->fgIsDhcpAcked = FALSE;
+			prAisBssInfo->u4DhcpRenewIntv = 0;
+			kalMemZero(prAisBssInfo->aucDhcpServerIpAddr,
+					sizeof(prAisBssInfo->aucDhcpServerIpAddr));
+		}
+#endif
 
 		/* 4 <4.1> sync. with firmware */
 		nicUpdateBss(prAdapter, prAdapter->prAisBssInfo->ucBssIndex);
@@ -5249,7 +5273,7 @@ void aisBssBeaconTimeout(IN struct ADAPTER *prAdapter)
 void aisBssSecurityChanged(struct ADAPTER *prAdapter)
 {
 	prAdapter->rWifiVar.rConnSettings.fgIsDisconnectedByNonRequest = TRUE;
-	aisFsmStateAbort(prAdapter, DISCONNECT_REASON_CODE_DEAUTHENTICATED,
+	aisFsmStateAbort(prAdapter, DISCONNECT_REASON_CODE_DISASSOCIATED,
 			 FALSE);
 }
 
@@ -5268,11 +5292,16 @@ void aisBssLinkDown(IN struct ADAPTER *prAdapter)
 	struct BSS_INFO *prAisBssInfo;
 	u_int8_t fgDoAbortIndication = FALSE;
 	struct CONNECTION_SETTINGS *prConnSettings;
+	struct AIS_FSM_INFO *prAisFsmInfo;
 
 	ASSERT(prAdapter);
 
 	prAisBssInfo = prAdapter->prAisBssInfo;
 	prConnSettings = &(prAdapter->rWifiVar.rConnSettings);
+	prAisFsmInfo = &(prAdapter->rWifiVar.rAisFsmInfo);
+
+	if (!prAisFsmInfo)
+		return;
 
 	/* 4 <1> Diagnose Connection for Beacon Timeout Event */
 	if (prAisBssInfo->eConnectionState == PARAM_MEDIA_STATE_CONNECTED) {
@@ -5296,6 +5325,8 @@ void aisBssLinkDown(IN struct ADAPTER *prAdapter)
 		DBGLOG(AIS, EVENT, "aisBssLinkDown\n");
 		aisFsmStateAbort(prAdapter,
 				 DISCONNECT_REASON_CODE_DISASSOCIATED, FALSE);
+		cnmTimerStopTimer(prAdapter, &prAisFsmInfo->rDeauthDoneTimer);
+		aisDeauthXmitComplete(prAdapter, NULL, TX_RESULT_LIFE_TIMEOUT);
 	}
 
 	/* kalIndicateStatusAndComplete(prAdapter->prGlueInfo,
@@ -5343,7 +5374,7 @@ aisDeauthXmitComplete(IN struct ADAPTER *prAdapter,
 #endif
 	} else {
 		DBGLOG(AIS, WARN,
-		       "DEAUTH frame transmitted without further handling");
+		       "DEAUTH frame transmitted without further handling(%d)", rTxDoneStatus);
 	}
 
 	return WLAN_STATUS_SUCCESS;
@@ -5502,6 +5533,7 @@ void aisFsmRoamingDisconnectPrevAP(IN struct ADAPTER *prAdapter,
 		struct PARAM_SSID rSsid;
 		struct BSS_DESC *prBssDesc = NULL;
 
+		memset(&rSsid, 0, sizeof(struct PARAM_SSID));
 		COPY_SSID(rSsid.aucSsid, rSsid.u4SsidLen, prAisBssInfo->aucSSID,
 			  prAisBssInfo->ucSSIDLen);
 		prBssDesc =
@@ -6482,7 +6514,7 @@ send_response:
 void aisSendNeighborRequest(struct ADAPTER *prAdapter)
 {
 	struct SUB_ELEMENT_LIST *prSSIDIE;
-	uint8_t aucBuffer[sizeof(*prSSIDIE) + 31];
+	uint8_t aucBuffer[sizeof(*prSSIDIE) + ELEM_MAX_LEN_SSID];
 	struct BSS_INFO *prBssInfo = prAdapter->prAisBssInfo;
 
 	kalMemZero(aucBuffer, sizeof(aucBuffer));
@@ -6646,8 +6678,11 @@ void aisPreSuspendFlow(IN struct GLUE_INFO *prGlueInfo)
 {
 	uint32_t rStatus = WLAN_STATUS_SUCCESS;
 	uint32_t u4BufLen;
+	struct AIS_FSM_INFO *prAisFsmInfo;
 
 	GLUE_SPIN_LOCK_DECLARATION();
+
+	prAisFsmInfo = &(prGlueInfo->prAdapter->rWifiVar.rAisFsmInfo);
 
 	/* report scan abort */
 	GLUE_ACQUIRE_SPIN_LOCK(prGlueInfo, SPIN_LOCK_NET_DEV);
@@ -6674,11 +6709,13 @@ void aisPreSuspendFlow(IN struct GLUE_INFO *prGlueInfo)
 	if (prGlueInfo->prAdapter->rWifiVar.ucWow &&
 		!prGlueInfo->prAdapter->rWowCtrl.fgWowEnable &&
 		!prGlueInfo->prAdapter->rWifiVar.ucAdvPws) {
-		if (kalGetMediaStateIndicated(prGlueInfo) ==
-			PARAM_MEDIA_STATE_CONNECTED) {
+		if (kalGetMediaStateIndicated(prGlueInfo) == PARAM_MEDIA_STATE_CONNECTED
+			|| prGlueInfo->prAdapter->rWifiVar.rAisFsmInfo.fgIsReqDisconnectPending == TRUE) {
 			DBGLOG(REQ, STATE, "CFG80211 suspend link down\n");
 			rStatus = kalIoctl(prGlueInfo, wlanoidLinkDown, NULL, 0,
 				TRUE, FALSE, FALSE, &u4BufLen);
+			if (rStatus != WLAN_STATUS_SUCCESS)
+				DBGLOG(REQ, WARN, "CFG80211 suspend link down failed\n");
 		}
 	}
 }

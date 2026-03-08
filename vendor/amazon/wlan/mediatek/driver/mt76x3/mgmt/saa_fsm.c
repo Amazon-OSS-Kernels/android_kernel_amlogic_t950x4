@@ -249,13 +249,16 @@ void saaSendAuthAssoc(IN struct ADAPTER *prAdapter,
 					prStaRec->aucMacAddr,
 					TRUE,
 					&rSsid);
-				DBGLOG(RSN, INFO, "[RSN] prBssDesc["
-					MACSTR" ,%s] Searched by BSSID["
-					MACSTR"] & SSID %s.\n",
-					MAC2STR(prBssDesc->aucBSSID),
-					prBssDesc->aucSSID,
-					MAC2STR(prStaRec->aucMacAddr),
-					prConnSettings->aucSSID);
+				if (prBssDesc != NULL)
+					DBGLOG(RSN, INFO, "[RSN] prBssDesc["
+						MACSTR" ,%s] Searched by BSSID["
+						MACSTR"] & SSID %s.\n",
+						MAC2STR(prBssDesc->aucBSSID),
+						prBssDesc->aucSSID,
+						MAC2STR(prStaRec->aucMacAddr),
+						prConnSettings->aucSSID);
+				else
+					DBGLOG(RSN, WARN, "prBssDesc = NULL\n");
 			} else {
 				prBssDesc =
 					scanSearchBssDescByBssidAndChanNum(
@@ -1916,6 +1919,10 @@ uint32_t saaFsmRunEventRxDeauth(IN struct ADAPTER *prAdapter,
 			if (!IS_AP_STA(prStaRec))
 				break;
 
+			/* if state != CONNECTED, don't do disconnect again */
+			if (prAdapter->prGlueInfo->eParamMediaStateIndicated !=
+				PARAM_MEDIA_STATE_CONNECTED)
+				break;
 
 			prAisBssInfo = prAdapter->prAisBssInfo;
 
@@ -2399,7 +2406,12 @@ uint32_t saaFsmRunEventRxDisassoc(IN struct ADAPTER *prAdapter,
 					DBGLOG(SAA, INFO,
 						"notification of RX disassociation %d\n",
 						prSwRfb->u2PacketLen);
-					if (wdev->current_bss) {
+#if KERNEL_VERSION(6, 0, 0) <= CFG80211_VERSION_CODE
+					if (wdev->connected)
+#else
+					if (wdev->current_bss)
+#endif
+					{
 #if CFG_WDEV_LOCK_THREAD_SUPPORT
 						if (in_interrupt()) {
 							pFrameBuf = kalMemAlloc(prSwRfb->u2PacketLen, PHY_MEM_TYPE);
@@ -2462,7 +2474,12 @@ uint32_t saaFsmRunEventRxDisassoc(IN struct ADAPTER *prAdapter,
 			wdev = prAdapter->prGlueInfo->prP2PInfo[ucRoleIdx]
 						->aprRoleHandler->ieee80211_ptr;
 
-			if (wdev->current_bss) {
+#if KERNEL_VERSION(6, 0, 0) <= CFG80211_VERSION_CODE
+			if (wdev->connected)
+#else
+			if (wdev->current_bss)
+#endif
+			{
 #if CFG_WDEV_LOCK_THREAD_SUPPORT
 				if (in_interrupt()) {
 					pFrameBuf = kalMemAlloc(prSwRfb->u2PacketLen, PHY_MEM_TYPE);

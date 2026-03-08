@@ -530,6 +530,9 @@ enum ENUM_CMD_ID {
 #if CFG_WOW_SUPPORT
 	CMD_ID_SET_PF_CAPABILITY = 0x59,	/* 0x59 (Set) */
 #endif
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+	CMD_ID_SET_DHCP_RENEW_OFFLOAD = 0x5C,	/* 0x5C (Set) */
+#endif
 	CMD_ID_SET_RRM_CAPABILITY = 0x5A, /* 0x5A (Set) */
 	CMD_ID_SET_AP_CONSTRAINT_PWR_LIMIT = 0x5B, /* 0x5B (Set) */
 	CMD_ID_SET_TSM_STATISTICS_REQUEST = 0x5E,
@@ -1975,6 +1978,15 @@ struct CMD_FW_LOG_2_HOST_CTRL {
 	uint8_t ucReserve[2];
 };
 
+struct CMD_GET_MAGIC_PKT_INFO_T {
+	uint16_t u2Type;
+	uint16_t u2Len;
+	uint32_t u4ConfigMask;
+	uint32_t u4MagicPktCntTotal;
+	uint32_t u4GpioPullLowCntTotal;
+	uint32_t u4GpioPullHighCntTotal;
+};
+
 struct CMD_CHIP_CONFIG {
 	uint16_t u2Id;
 	uint8_t ucType;
@@ -3273,9 +3285,11 @@ struct CMD_SET_DEVICE_MODE {
 #define CMD_NOISE_HISTOGRAM_TYPE2 (0x51)
 #endif
 #define CMD_ADMINCTRL_CONFIG_TYPE (0x6)
-#ifdef CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
+#if CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
 #define CMD_EXT_PTA_CONFIG_TYPE (0x7)
 #endif
+/* 0x8 is reserved for GARP count */
+#define CMD_GET_MAGIC_PKT_INFO_TYPE (0x9)
 
 /* for PtaConfig field */
 #define CMD_PTA_CONFIG_PTA_EN (1<<0)
@@ -3303,7 +3317,7 @@ struct CMD_SET_DEVICE_MODE {
 #define CMD_PTA_CONFIG_COMM_ACT_BT_WF1_INBAND (1<<17)
 #define CMD_PTA_CONFIG_COMM_ACT_BT_WF1_OUTBAND (1<<18)
 
-#ifdef CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
+#if CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
 /* ext pta config related mask */
 #define CMD_EXT_PTA_CONFIG_EXT_PTA (1<<0)
 #define CMD_EXT_PTA_CONFIG_HI_RX_TAG (1<<1)
@@ -3395,7 +3409,7 @@ struct CMD_PTA_CONFIG {
 	uint32_t u4CoexMode;
 };
 
-#ifdef CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
+#if CFG_SUPPORT_EXT_PTA_DEBUG_COMMAND
 struct CMD_EXT_PTA_CONFIG {
 	uint16_t u2Type;
 	uint16_t u2Len;
@@ -3413,6 +3427,9 @@ struct CMD_EXT_PTA_CONFIG {
 	uint32_t u4CommActZbWf0Hsf;
 	uint32_t u4CommActZbWf1Hsf;
 	/* used in get */
+	uint32_t u4BtTag;
+	uint32_t u4Wf0Tag;
+	uint32_t u4Wf1Tag;
 	uint32_t u4ZbGntCnt;
 	uint32_t u4ZbAbtCnt;
 	uint32_t u4ZbLoTxReqCnt;
@@ -4023,6 +4040,16 @@ struct EXT_EVENT_RECAL_DATA_T {
 	} u;
 };
 
+#if CFG_STR_DHCP_RENEW_OFFLOAD
+struct CMD_DHCP_OFFLOAD_SETTING {
+	uint32_t u4RenewIntv;	/* DHCP renew offload interval configured by upper-layer */
+	uint8_t aucDhcpServerIpAddr[4];
+	uint8_t ucBssIndex;
+	uint8_t ucEnableOffload;
+	uint8_t ucSuspend;
+	uint8_t ucReserved[1];
+};
+#endif
 
 struct CMD_SUSPEND_MODE_SETTING {
 	uint8_t ucBssIndex;

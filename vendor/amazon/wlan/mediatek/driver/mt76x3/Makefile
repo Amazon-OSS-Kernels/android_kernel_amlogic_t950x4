@@ -114,6 +114,14 @@ ifneq ($(CFG_FTV_WLANREMOVE_DEAUTH_NO_TXDONE),)
 ccflags-y += -DCFG_FTV_WLANREMOVE_DEAUTH_NO_TXDONE=$(CFG_FTV_WLANREMOVE_DEAUTH_NO_TXDONE)
 endif
 
+ifeq ($(CFG_STR_DHCP_RENEW_OFFLOAD), y)
+ccflags-y += -DCFG_STR_DHCP_RENEW_OFFLOAD=1
+endif
+
+ifneq ($(CFG_SUPPORT_WAPI),)
+ccflags-y += -DCFG_SUPPORT_WAPI=$(CFG_SUPPORT_WAPI)
+endif
+
 # ---------------------------------------------------
 # Compile Options
 # ---------------------------------------------------
@@ -727,6 +735,7 @@ ccflags-y += -Wno-vla
 ccflags-y += -Wno-implicit-function-declaration
 ccflags-y += -Wno-implicit-fallthrough
 ccflags-y += -Wno-misleading-indentation
+ccflags-y += -Wno-stringop-overread
 ccflags-y += -D_FORTIFY_SOURCE=0
 ifeq ($(CFG_SUPPORT_EMPTY_MAC), y)
 ccflags-y += -DCFG_SUPPORT_EMPTY_MAC
