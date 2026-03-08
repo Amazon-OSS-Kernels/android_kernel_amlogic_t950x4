@@ -1,0 +1,1 @@
+watchdog-y = watchdog.o
