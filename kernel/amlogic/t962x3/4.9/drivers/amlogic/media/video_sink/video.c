@@ -528,13 +528,12 @@ static ssize_t pts_enforce_pulldown_write_file(struct file *file,
 			const char __user *userbuf, size_t count, loff_t *ppos)
 {
 	unsigned int write_val;
-	char buf[16];
+	char buf[16] = {0};
 	int ret;
 
-	count = min_t(size_t, count, (sizeof(buf)-1));
-	if (copy_from_user(buf, userbuf, count))
-		return -EFAULT;
-	buf[count] = 0;
+	ret = simple_write_to_buffer(buf, count, ppos, userbuf, count);
+	if (ret < 0)
+		return -EINVAL;
 	ret = kstrtoint(buf, 0, &write_val);
 	if (ret != 0)
 		return -EINVAL;
