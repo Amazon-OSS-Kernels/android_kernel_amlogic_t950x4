@@ -895,8 +895,10 @@ static int ad82088d_reg_ram_init(struct snd_soc_codec *codec)
 	int i;
 	int reg_data;
 	printk("ad82088d i2c address = %p,  %s!\n", codec, __func__);
+
+	msleep(100);
 	ad82088d_pd_gpio_set(codec, true);	// pull high amp PD pin
-	msleep(20);
+	msleep(40);
 	// software reset amp
 	ret = snd_soc_update_bits(codec, AD82088D_STATE_CTRL5_REG,
 				  AD82088D_SW_RESET, 0);
@@ -1107,7 +1109,6 @@ static int ad82088d_dac_event(struct snd_soc_dapm_widget *w,
 		if (ret < 0)
 			dev_err(codec->dev,
 				"failed to write MUTE register: %d\n", ret);
-		msleep(20);
 		ad82088d_pd_gpio_set(codec, false);	// pull low amp PD pin
 	}
 	return 0;

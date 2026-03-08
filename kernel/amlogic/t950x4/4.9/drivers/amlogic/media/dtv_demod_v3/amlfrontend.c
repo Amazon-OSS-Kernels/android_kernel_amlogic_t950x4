@@ -4466,7 +4466,7 @@ static unsigned int dvbs_get_bitrate(int sr)
 	return sr * cr_b / cr_t / modu_ratio;
 }
 
-static int dtvdemod_dvbs_read_status(struct dvb_frontend *fe, enum fe_status *status,
+int dtvdemod_dvbs_read_status(struct dvb_frontend *fe, enum fe_status *status,
 		unsigned int if_freq_khz, bool re_tune)
 {
 	int ilock = 0;
@@ -5037,6 +5037,8 @@ static bool enter_mode(enum fe_delivery_system delsys)
 static int leave_mode(enum fe_delivery_system delsys)
 {
 	struct amldtvdemod_device_s *devp = dtvdemod_get_dev();
+	struct dtv_frontend_properties *c = &devp->frontend.dtv_property_cache;
+	struct aml_diseqc *diseqc = &devp->diseqc;
 
 	if (delsys < SYS_ANALOG)
 		PR_INFO("%s:%s\n", __func__, name_fe_delivery_system[delsys]);
@@ -5097,6 +5099,8 @@ static int leave_mode(enum fe_delivery_system delsys)
 		aml_diseqc_isr_en(&devp->diseqc, false);
 		/* disable dvbs mode to avoid hang when switch to other demod */
 		demod_top_write_reg(DEMOD_TOP_REGC, 0x11);
+		aml_diseqc_set_lnb_voltage(diseqc, SEC_VOLTAGE_OFF);
+		c->voltage = SEC_VOLTAGE_OFF;
 		break;
 	default:
 		break;
@@ -5585,7 +5589,7 @@ static void dtvdemod_fw_dwork(struct work_struct *work)
 	ret = dtvdemod_download_firmware(devp);
 
 	if ((ret < 0) && (cnt < 10))
-		schedule_delayed_work(&devp->fw_dwork, 5 * HZ);
+		schedule_delayed_work(&devp->fw_dwork, 3 * HZ);
 	else
 		cancel_delayed_work(&devp->fw_dwork);
 
@@ -5616,6 +5620,7 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 	unsigned int polarity = 0;
 	int i = 0, j = 0, k = 0;
 	int asperity = 0, next_step_khz = 0, signal_state = 0, freq_add = 0, freq_add_dly = 0;
+	unsigned int last_step_num = 0, cur_step_num = 0;
 
 	PR_INFO("a new blind scan thread\n");
 
@@ -5624,9 +5629,6 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 		return;
 	}
 
-	/* map blind scan fft process to 0% - 50%*/
-	freq_one_percent = (freq_max - freq_min) / 50;
-	PR_INFO("freq_one_percent: %d\n", freq_one_percent);
 	timer_set_max(devp, D_TIMER_DETECT, 600);
 	fe->ops.info.type = FE_QPSK;
 	c = &fe->dtv_property_cache;
@@ -5670,6 +5672,9 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 	if (blind_scan_new == 0x1 && freq_max == 2150000)
 		freq_max = freq_max + freq_step;
 
+	freq_one_percent = (freq_max - freq_min) / 100;
+	PR_DVBS("freq_one_percent: %d.\n", freq_one_percent);
+
 	/* 950MHz ~ 2150MHz. */
 	for (freq = freq_min; freq <= freq_max;) {
 		if (devp->blind_scan_stop)
@@ -5683,6 +5688,7 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 		PR_INFO("get asperity: %d, next_step_khz %d, signal_state %d.\n",
 			asperity, next_step_khz, signal_state);
 
+		memset(&total_result, 0, sizeof(total_result));
 		fft_frc_range_min = (freq - 20000) / 1000;
 		fft_frc_range_max = ((freq - 20000) / 1000) + (freq_step / 1000);
 		for (i = 0; i < 4 && asperity; i++) {
@@ -5694,7 +5700,7 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 				fft_frc_range_min, fft_frc_range_max, range_ini);
 
 			if (in_bw_result.tp_num != 0)
-				PR_INFO("------In Bw(range_ini %d) Find Tp Num:%d-----\n",
+				PR_INFO("------In Bw(range_ini %d) Tp Num:%d-----\n",
 						range_ini, in_bw_result.tp_num);
 
 			for (j = 0; j < in_bw_result.tp_num; j++) {
@@ -5706,16 +5712,113 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 			}
 		}
 
-		if (freq < freq_max) {
-			c->frequency = (freq - freq_min) / freq_one_percent;
-			devp->blind_result_frequency = c->frequency;
+		PR_INFO("------FIND TP NUM: %d-----\n", total_result.tp_num);
+
+		if (total_result.tp_num > 0 && !devp->blind_scan_stop) {
+			dvbs_blind_fft_result_handle(&total_result);
+
+			PR_INFO("------Start Try To Lock Test-----\n");
+			last_locked_freq = 0;
+			last_locked_sr = 0;
+			for (k = 0; k < total_result.tp_num; ++k) {
+				if (devp->blind_scan_stop)
+					break;
+
+				cur_freq = total_result.freq[k] * 1000;
+				cur_sr = total_result.bw[k] * 1000;
+
+				PR_INFO("Try TP: [%d KHz, %d bps].\n",
+						cur_freq, cur_sr);
+
+				if ((abs(last_locked_freq - cur_freq) < 5000) ||
+					(abs(last_locked_freq - cur_freq) < 10000 &&
+					last_locked_sr >= 20000000) ||
+					((abs(last_locked_sr - cur_sr) <= 5000) &&
+					(abs(last_locked_freq - cur_freq) <= 8000))) {
+					status = FE_TIMEDOUT;
+					PR_INFO("Skip tune: last[%dKHz, %dbps], cur[%dKHz, %dbps].\n",
+							last_locked_freq, last_locked_sr,
+							cur_freq, cur_sr);
+				} else {
+					c->frequency = cur_freq;
+					c->bandwidth_hz = cur_sr;
+					c->symbol_rate = cur_sr;
+
+					//in Unicable blind scan mode, when try lock TP, the actual IF freq
+					//should be moved to the specified user band freq first
+					if (!devp->blind_scan_stop && devp->demod_status.is_singlecable)
+						dtvdemod_dvbs_unicable_change_channel(fe);
+
+					dtvdemod_dvbs_set_frontend(fe);
+					timer_begain(devp, D_TIMER_DETECT);
+
+					usleep_range(500000, 510000);
+					dtvdemod_dvbs_read_status(fe, &status, cur_freq, false);
+				}
+
+				if (status == FE_TIMEDOUT || status == 0) {
+				} else {
+					freq_offset = dvbs_get_freq_offset(&polarity);
+					freq_offset = (freq_offset + 500) / 1000;
+
+					if (devp->demod_status.is_singlecable)
+						polarity = polarity ? 0 : 1;
+
+					if (polarity)
+						cur_freq = cur_freq + freq_offset * 1000;
+					else
+						cur_freq = cur_freq - freq_offset * 1000;
+
+					// cur_sr = dvbs_get_symbol_rate() * 1000;
+
+					if ((abs(last_locked_freq - cur_freq) < 5000) ||
+						(abs(last_locked_freq - cur_freq) < 10000 &&
+						last_locked_sr >= 20000000)) {
+						status = BLINDSCAN_UPDATEPROCESS | FE_HAS_LOCK;
+					PR_INFO("Skip report: last[%d KHz, %d bps], cur[%d KHz, %d bps].\n",
+							last_locked_freq, last_locked_sr,
+							cur_freq, cur_sr);
+					} else {
+						c->symbol_rate = cur_sr;
+						c->delivery_system = devp->last_delsys;
+						c->bandwidth_hz = cur_sr;
+						c->frequency = cur_freq;
+
+						last_locked_sr = cur_sr;
+						last_locked_freq = cur_freq;
+
+						devp->blind_result_frequency = cur_freq;
+						devp->blind_result_symbol_rate = cur_sr;
+
+						status = BLINDSCAN_UPDATERESULTFREQ |
+							FE_HAS_LOCK;
+
+						PR_INFO("Get actual TP: [%d KHz, %d bps].\n",
+								cur_freq, cur_sr);
+
+						dvb_frontend_add_event(fe, status);
+						if (devp->blind_step == DTVBLIND_SCAN_STEP_LOCK)
+							wait_searching_end(devp, cur_freq);
+					}
+				}
+			}
+		}
+
+		if (devp->blind_scan_stop)
+			break;
+
+		//map blind_scan progress to 0% ~ 99%
+		cur_step_num = (freq - freq_min) / freq_one_percent;
+		PR_DVBS("last %d cur_step_num %d\n", last_step_num, cur_step_num);
+		if (freq <= freq_max && cur_step_num > last_step_num &&
+				cur_step_num < 100) {
+			last_step_num = cur_step_num;
+			devp->blind_result_frequency = cur_step_num;
 			devp->blind_result_symbol_rate = 0;
 
 			status = BLINDSCAN_UPDATEPROCESS | FE_HAS_LOCK;
-			PR_INFO("FFT search: blind scan process: [%d%%].\n",
-				fe->dtv_property_cache.frequency);
-			if (c->frequency < 100)
-				dvb_frontend_add_event(fe, status);
+			PR_INFO("blind scan process: [%d%%].\n", devp->blind_result_frequency);
+			dvb_frontend_add_event(fe, status);
 		}
 
 			if (blind_scan_new == 0x1) {
@@ -5742,108 +5845,6 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 		PR_INFO("freq_add %d, freq_add_dly %d.\n", freq_add, freq_add_dly);
 	}
 
-	PR_INFO("------TOTAL FIND TP NUM: %d-----\n", total_result.tp_num);
-
-	if (total_result.tp_num > 0 && !devp->blind_scan_stop) {
-		/* map blind scan try lock process */
-		freq_one_percent = 50 / total_result.tp_num;
-
-		dvbs_blind_fft_result_handle(&total_result);
-
-		PR_INFO("------Start Try To Lock Test-----\n");
-		last_locked_freq = 0;
-		last_locked_sr = 0;
-		for (k = 0; k < total_result.tp_num; ++k) {
-			if (devp->blind_scan_stop)
-				break;
-
-			cur_freq = total_result.freq[k] * 1000;
-			cur_sr = total_result.bw[k] * 1000;
-
-			PR_INFO("Try TP: [%d KHz, %d bps].\n",
-					cur_freq, cur_sr);
-
-			if ((abs(last_locked_freq - cur_freq) < 5000) ||
-				(abs(last_locked_freq - cur_freq) < 10000 &&
-				last_locked_sr >= 20000000) ||
-				((abs(last_locked_sr - cur_sr) <= 5000) &&
-				(abs(last_locked_freq - cur_freq) <= 8000))) {
-				status = FE_TIMEDOUT;
-				PR_INFO("Skip tune: last[%dKHz, %dbps], cur[%dKHz, %dbps].\n",
-						last_locked_freq, last_locked_sr,
-						cur_freq, cur_sr);
-			} else {
-				c->frequency = cur_freq;
-				c->bandwidth_hz = cur_sr;
-				c->symbol_rate = cur_sr;
-
-				//in Unicable blind scan mode, when try lock TP, the actual IF freq
-				//should be moved to the specified user band freq first
-				if (!devp->blind_scan_stop && devp->demod_status.is_singlecable)
-					dtvdemod_dvbs_unicable_change_channel(fe);
-
-				dtvdemod_dvbs_set_frontend(fe);
-				timer_begain(devp, D_TIMER_DETECT);
-
-				usleep_range(500000, 510000);
-				dtvdemod_dvbs_read_status(fe, &status, cur_freq, false);
-			}
-
-			if (status == FE_TIMEDOUT || status == 0) {
-				/*try lock process map to 51% - 99%*/
-				c->frequency = k * freq_one_percent + 50;
-				devp->blind_result_frequency = c->frequency;
-				devp->blind_result_symbol_rate = 0;
-
-				status = BLINDSCAN_UPDATEPROCESS | FE_HAS_LOCK;
-				PR_INFO("Try lock: blind scan process: [%d%%].\n",
-						c->frequency);
-				if (c->frequency < 100)
-					dvb_frontend_add_event(fe, status);
-			} else {
-				freq_offset = dvbs_get_freq_offset(&polarity) / 1000;
-
-				if (devp->demod_status.is_singlecable)
-					polarity = polarity ? 0 : 1;
-
-				if (polarity)
-					cur_freq = cur_freq + freq_offset * 1000;
-				else
-					cur_freq = cur_freq - freq_offset * 1000;
-
-				// cur_sr = dvbs_get_symbol_rate() * 1000;
-
-				if ((abs(last_locked_freq - cur_freq) < 5000) ||
-					(abs(last_locked_freq - cur_freq) < 10000 &&
-					last_locked_sr >= 20000000)) {
-					status = BLINDSCAN_UPDATEPROCESS | FE_HAS_LOCK;
-				PR_INFO("Skip report: last[%d KHz, %d bps], cur[%d KHz, %d bps].\n",
-						last_locked_freq, last_locked_sr,
-						cur_freq, cur_sr);
-				} else {
-					c->symbol_rate = cur_sr;
-					c->delivery_system = devp->last_delsys;
-					c->bandwidth_hz = cur_sr;
-					c->frequency = cur_freq;
-
-					last_locked_sr = cur_sr;
-					last_locked_freq = cur_freq;
-
-					devp->blind_result_frequency = cur_freq;
-					devp->blind_result_symbol_rate = cur_sr;
-
-					status = BLINDSCAN_UPDATERESULTFREQ |
-						FE_HAS_LOCK;
-
-					PR_INFO("Get actual TP: [%d KHz, %d bps].\n",
-							cur_freq, cur_sr);
-
-					dvb_frontend_add_event(fe, status);
-				}
-			}
-		}
-	}
-
 	if (!devp->blind_scan_stop) {
 		c->frequency = 100;
 		devp->blind_result_frequency = 100;
@@ -5853,6 +5854,9 @@ static void dvbs_blind_scan_new_work(struct work_struct *work)
 		dvb_frontend_add_event(fe, status);
 		devp->blind_scan_stop = 1;
 	}
+
+	if (devp->demod_status.is_singlecable)
+		blind_scan_new = 0x2;
 }
 
 static void blind_scan_work(struct work_struct *work)
@@ -5952,6 +5956,8 @@ static int aml_dtvdemod_probe(struct platform_device *pdev)
 	devp->ci_mode = 0;
 	devp->last_qam_mode = QAM_MODE_NUM;
 	devp->last_lock = -1;
+	devp->suspended = false;
+	devp->blind_step = DTVBLIND_SCAN_NORMAL;
 
 	//ary temp:
 	aml_demod_init();
@@ -5967,7 +5973,7 @@ static int aml_dtvdemod_probe(struct platform_device *pdev)
 
 		/* delayed workqueue for dvbt2 fw downloading */
 		INIT_DELAYED_WORK(&devp->fw_dwork, dtvdemod_fw_dwork);
-		schedule_delayed_work(&devp->fw_dwork, 10 * HZ);
+		schedule_delayed_work(&devp->fw_dwork, 5 * HZ);
 
 		/* workqueue for blind scan process */
 		//INIT_WORK(&devp->blind_scan_work, dvbs_blind_scan_work);
@@ -6374,9 +6380,13 @@ static int aml_dtvdm_init(struct dvb_frontend *fe)
 
 	mutex_lock(&devp->lock);
 
-	devp->last_delsys = SYS_UNDEFINED;
-	fe->ops.info.type = 0xFF; /* undefined */
-	PR_INFO("%s OK.\n", __func__);
+	if (devp->suspended) {
+		devp->suspended = false;
+		devp->last_delsys = SYS_UNDEFINED;
+		fe->ops.info.type = 0xFF; /* undefined */
+
+		PR_INFO("%s OK.\n", __func__);
+	}
 
 	mutex_unlock(&devp->lock);
 
@@ -6390,15 +6400,19 @@ static int aml_dtvdm_sleep(struct dvb_frontend *fe)
 
 	mutex_lock(&devp->lock);
 
-	delsys = devp->last_delsys;
+	if (!devp->suspended) {
+		delsys = devp->last_delsys;
 
-	if (get_dtvpll_init_flag()) {
-		PR_INFO("%s\n", __func__);
-		if (delsys != SYS_UNDEFINED)
-			delsys_exit(delsys, SYS_UNDEFINED);
+		if (get_dtvpll_init_flag()) {
+			PR_INFO("%s\n", __func__);
+			if (delsys != SYS_UNDEFINED)
+				delsys_exit(delsys, SYS_UNDEFINED);
+		}
+
+		devp->suspended = true;
+
+		PR_INFO("%s OK.\n", __func__);
 	}
-
-	PR_INFO("%s OK.\n", __func__);
 
 	mutex_unlock(&devp->lock);
 
@@ -7035,6 +7049,10 @@ static int aml_dtvdm_set_property(struct dvb_frontend *fe,
 		return -ECANCELED;
 	}
 
+	/* if suspended, delsys will be recovered in aml_dtvdm_init */
+	if (tvp->cmd == DTV_DELIVERY_SYSTEM && devp->suspended)
+		devp->suspended = false;
+
 	switch (tvp->cmd) {
 	case DTV_DELIVERY_SYSTEM:
 		delsys = tvp->u.data;
@@ -7094,17 +7112,30 @@ static int aml_dtvdm_set_property(struct dvb_frontend *fe,
 		}
 		PR_INFO("DTV_START_BLIND_SCAN\n");
 		devp->blind_scan_stop = 0;
+		if (devp->singlecable_param.version)
+			blind_scan_new = 0x1;
+
 		schedule_work(&devp->blind_scan_work);
 		PR_INFO("schedule workqueue for blind scan, return\n");
 		break;
 
 	case DTV_CANCEL_BLIND_SCAN:
 		devp->blind_scan_stop = 1;
+		if (devp->singlecable_param.version)
+			blind_scan_new = 0x2;
 		PR_INFO("DTV_CANCEL_BLIND_SCAN\n");
 		/* Normally, need to call cancel_work_sync()
 		 * wait to workqueue exit,
 		 * but this will cause a deadlock.
 		 */
+		break;
+	case DTV_BLIND_SCAN_STEP_NEXT:
+		if (devp->blind_step == DTVBLIND_SCAN_STEP_LOCK) {
+			PR_INFO("blind_scan already is step lock\n");
+			break;
+		}
+		devp->blind_step = DTVBLIND_SCAN_STEP_LOCK;
+		PR_INFO("blind_scan step lock\n");
 		break;
 	case DTV_SINGLE_CABLE_VER:
 		/* not singlecable: 0, 1.0X - 1(EN50494), 2.0X - 2(EN50607) */
@@ -7359,6 +7390,7 @@ struct dvb_frontend *aml_dtvdm_attach(const struct demod_config *config)
 
 	fe = &devp->frontend;
 	devp->frontend.demodulator_priv = devp;
+	devp->frontend.ops.info.type = 0xFF;
 	devp->last_delsys = SYS_UNDEFINED;
 
 	switch (ic_version) {

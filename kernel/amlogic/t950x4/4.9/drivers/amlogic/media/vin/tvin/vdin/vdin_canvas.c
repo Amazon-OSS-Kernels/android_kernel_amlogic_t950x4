@@ -39,7 +39,11 @@
  *for skip two vframe case,need +2
  */
 static unsigned int max_buf_num = VDIN_CANVAS_MAX_CNT;
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 static unsigned int min_buf_num = VDIN_CANVAS_MIN_CNT;
+#else
+static unsigned int min_buf_num = 4;
+#endif
 static unsigned int max_buf_width = VDIN_CANVAS_MAX_WIDTH_HD;
 static unsigned int max_buf_height = VDIN_CANVAS_MAX_HEIGH;
 /* one frame max metadata size:32x280 bits = 1120bytes(0x460) */
@@ -462,9 +466,11 @@ unsigned int vdin_cma_alloc(struct vdin_dev_s *devp)
 	    devp->frame_buff_num <= max_buf_num)
 		max_buffer_num = devp->frame_buff_num;
 
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 	if (!devp->index && devp->frame_buff_num < 8 &&
 	    devp->fmt_info_p->scan_mode == TVIN_SCAN_MODE_INTERLACED)
 		max_buffer_num = 8; //8 is interlace minimum number of buffers
+#endif
 
 	devp->vfmem_max_cnt = devp->canvas_max_num = max_buffer_num;
 

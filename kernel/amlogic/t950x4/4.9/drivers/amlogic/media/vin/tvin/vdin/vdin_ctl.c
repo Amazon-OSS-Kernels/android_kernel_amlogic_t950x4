@@ -4804,7 +4804,11 @@ static int vdin_get_max_buf(struct vdin_dev_s *devp)
 		return -1;
 	}
 
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 	return devp->vfmem_max_cnt;
+#else
+	return devp->frame_buff_num;
+#endif
 }
 
 int vdin_event_cb(int type, void *data, void *op_arg)

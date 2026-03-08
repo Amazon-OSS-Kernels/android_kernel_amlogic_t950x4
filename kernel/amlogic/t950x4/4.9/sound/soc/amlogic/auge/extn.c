@@ -838,7 +838,11 @@ static int hdmiin_check_audio_type(struct extn *p_extn)
 {
 	int total_num = sizeof(type_texts)/sizeof(struct sppdif_audio_info);
 	int pc = frhdmirx_get_chan_status_pc(p_extn->hdmirx_mode);
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 	int audio_type = -1;
+#else
+	int audio_type = 0;
+#endif
 	int i;
 
 	if (!p_extn->nonpcm_flag && p_extn->hdmirx_mode)
@@ -1021,6 +1025,7 @@ int aml_get_hdmiin_audio_bitwidth(struct snd_kcontrol *kcontrol,
 }
 
 #ifdef CONFIG_AMLOGIC_MEDIA_VIDEO
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 static int get_tvin_video_delay_enum(struct snd_kcontrol *kcontrol,
 		struct snd_ctl_elem_value *ucontrol)
 {
@@ -1067,6 +1072,7 @@ static int get_tvin_video_min_delay_enum(struct snd_kcontrol *kcontrol,
 	ucontrol->value.enumerated.item[0] = get_tvin_delay_min_ms();
 	return 0;
 }
+#endif
 #endif
 static const struct snd_kcontrol_new extn_controls[] = {
 
@@ -1137,6 +1143,7 @@ static const struct snd_kcontrol_new extn_controls[] = {
 		aml_set_audio_edid),
 #endif
 #ifdef CONFIG_AMLOGIC_MEDIA_VIDEO
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 	SOC_SINGLE_EXT("TVIN VIDEO DELAY",
 		0, 0, 400, 0,
 		get_tvin_video_delay_enum,
@@ -1149,6 +1156,7 @@ static const struct snd_kcontrol_new extn_controls[] = {
 		0, 0, 0, 0,
 		get_tvin_video_max_delay_enum,
 		NULL),
+#endif
 #endif
 };
 

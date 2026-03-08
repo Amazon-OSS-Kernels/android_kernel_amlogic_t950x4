@@ -312,11 +312,13 @@ void set_video_zorder_ext(int layer_index, int zorder);
 s32 set_video_path_select(const char *recv_name, u8 layer_id);
 s32 set_sideband_type(s32 type, u8 layer_id);
 void vpp_probe_en_set(u32 enable);
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 void set_tvin_delay_start(u32 start);
 void set_tvin_delay_duration(u32 time);
 u32 get_tvin_delay(void);
 u32 get_tvin_delay_max_ms(void);
 u32 get_tvin_delay_min_ms(void);
+#endif
 void get_video_axis_offset(s32 *x_offset, s32 *y_offset);
 extern unsigned int idme_get_bootmode(void);
 #endif /* VIDEO_H */

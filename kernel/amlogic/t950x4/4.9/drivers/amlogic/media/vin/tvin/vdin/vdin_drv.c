@@ -4234,6 +4234,7 @@ static int vdin_drv_probe(struct platform_device *pdev)
 
 	ret = of_property_read_u32(pdev->dev.of_node, "frame_buff_num",
 				   &vdevp->frame_buff_num);
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 	if (ret) {
 		if (!vdevp->index)
 			/* dts not config vdin0 default 6 buffers */
@@ -4242,6 +4243,10 @@ static int vdin_drv_probe(struct platform_device *pdev)
 			/* dts not config vdin1 default 4 buffers */
 			vdevp->frame_buff_num = 4;
 	}
+#else
+	if (ret)
+		vdevp->frame_buff_num = 0;
+#endif
 
 	/* init vdin parameters */
 	vdevp->flags = VDIN_FLAG_NULL;

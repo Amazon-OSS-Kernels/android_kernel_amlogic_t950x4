@@ -29,4 +29,10 @@ config AMLOGIC_MEDIA_VIDEOCAPTURE
     help
 		Internal Video Capture driver
 
+config ENABLE_HDMIIN_DELAY
+    bool "Amlogic new HDMI delay interface"
+    default y
+    help
+		Amlogic new HDMI delay interface
+
 endmenu

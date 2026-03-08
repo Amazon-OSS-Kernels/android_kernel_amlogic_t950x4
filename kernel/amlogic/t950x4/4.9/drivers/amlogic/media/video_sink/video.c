@@ -1069,7 +1069,9 @@ static u32 toggle_same_count;
 static int hdmin_delay_start;
 static int hdmin_delay_start_time;
 static int hdmin_delay_duration;
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 static int hdmin_delay_min_ms;
+#endif
 static int hdmin_delay_max_ms = 128;
 static int hdmin_delay_done = true;
 static int hdmin_need_drop_count;
@@ -3627,6 +3629,7 @@ static void dmc_adjust_for_mali_vpu(unsigned int width,
 	}
 }
 
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 #define VDIN_KEEP_COUNT 1
 #define DI_KEEP_COUNT_P 1
 #define DI_KEEP_COUNT_I 2
@@ -3725,6 +3728,7 @@ u32 get_tvin_delay_min_ms(void)
 	return hdmin_delay_min_ms;
 }
 EXPORT_SYMBOL(get_tvin_delay_min_ms);
+#endif
 
 /*ret = 0: no need delay*/
 /*ret = 1: need to delay*/
@@ -5191,12 +5195,30 @@ static irqreturn_t vsync_isr_in(int irq, void *dev_id)
 	toggle_cnt = 0;
 	vsync_count++;
 	timer_count++;
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 	if (display_frame_count < 3 && vf &&
 	    (vf->source_type == VFRAME_SOURCE_TYPE_HDMI ||
 	    vf->source_type == VFRAME_SOURCE_TYPE_CVBS ||
 	    vf->source_type == VFRAME_SOURCE_TYPE_TUNER))
 		hdmi_in_delay_maxmin_old(vf);
+#else
+	if (display_frame_count == 0 && vf &&
+	    (vf->source_type == VFRAME_SOURCE_TYPE_HDMI ||
+	    vf->source_type == VFRAME_SOURCE_TYPE_CVBS)) {
+		int buf_cnt = video_vdin_buf_info_get();
 
+		if (buf_cnt > 2) {
+			struct vinfo_s *video_info;
+
+			video_info = get_current_vinfo();
+			if (video_info->sync_duration_num > 0)
+				hdmin_delay_max_ms = 1000 *
+				video_info->sync_duration_den /
+				video_info->sync_duration_num
+				* (buf_cnt - 2);
+		}
+	}
+#endif
 #if defined(CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_VECM)
 	if (cur_frame_par) {/*need call every vsync*/
 		if (vf)
@@ -7426,7 +7448,9 @@ static int video_receiver_event_fun(int type, void *data, void *private_data)
 		dovi_drop_frame_num = 0;
 		video_inuse = 0;
 		mutex_unlock(&omx_mutex);
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 		hdmi_in_delay_maxmin_reset();
+#endif
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
 		if (is_dolby_vision_enable()) {
 			dv_vf_light_unreg_provider();
@@ -10503,6 +10527,7 @@ static ssize_t hdmin_delay_start_store(struct class *class,
 	return count;
 }
 
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 static ssize_t hdmin_delay_min_ms_show(struct class *class,
 				      struct class_attribute *attr,
 				      char *buf)
@@ -10525,6 +10550,7 @@ static ssize_t hdmin_delay_min_ms_store(struct class *class,
 	pr_info("[%s] hdmin_delay_min_ms:%d\n", __func__, value);
 	return count;
 }
+#endif
 
 static ssize_t hdmin_delay_max_ms_show(struct class *class,
 			struct class_attribute *attr, char *buf)
@@ -12919,10 +12945,12 @@ static struct class_attribute amvideo_class_attrs[] = {
 	       0664,
 	       hdmin_delay_duration_show,
 	       hdmin_delay_duration_store),
+#ifdef CONFIG_ENABLE_HDMIIN_DELAY
 	__ATTR(hdmin_delay_min_ms,
 	       0664,
 	       hdmin_delay_min_ms_show,
 	       hdmin_delay_min_ms_store),
+#endif
 	__ATTR(hdmin_delay_max_ms,
 	       0664,
 	       hdmin_delay_max_ms_show,
