@@ -13376,46 +13376,6 @@ static void vh265_work_implement(struct hevc_state_s *hevc,
 #ifdef AGAIN_HAS_THRESHOLD
 		hevc->next_again_flag = 1;
 #endif
-		if (input_stream_based(vdec)) {
-			u32 rp, wp, level;
-			struct vdec_input_s *input = &vdec->input;
-			rp = STBUF_READ(&vdec->vbuf, get_rp);;
-			wp = STBUF_READ(&vdec->vbuf, get_wp);
-			if (wp < rp)
-				level = input->size + wp - rp;
-			else
-				level = wp - rp;
-			if ((level >= dirty_buffersize_threshold) &&
-				(hevc->pre_parser_video_rp ==
-					STBUF_READ(&vdec->vbuf, get_rp)) &&
-				(hevc->pre_parser_video_wp ==
-					STBUF_READ(&vdec->vbuf, get_wp))) {
-				if (hevc->again_count == 0) {
-					hevc->again_timeout_jiffies =
-						get_jiffies_64() + dirty_time_threshold * HZ/1000;
-				}
-				hevc->again_count++;
-			}
-			else
-				hevc->again_count = 0;
-
-			hevc->pre_parser_video_rp = STBUF_READ(&vdec->vbuf, get_rp);
-			hevc->pre_parser_video_wp = STBUF_READ(&vdec->vbuf, get_wp);
-
-			if (((hevc->again_count > dirty_count_threshold) &&
-					time_after64(get_jiffies_64(), hevc->again_timeout_jiffies)) ||
-					(((error_handle_policy & 0x200) == 0) &&
-						(hevc->pic_list_init_flag == 0) &&
-						!(hevc->have_vps || hevc->have_sps || hevc->have_pps))) {
-				mutex_lock(&hevc->chunks_mutex);
-				hevc->again_count = 0;
-				vdec_vframe_dirty(hw_to_vdec(hevc), hevc->chunk);
-				hevc->chunk = NULL;
-				hevc_print(hevc, PRINT_FLAG_VDEC_DETAIL,
-					"Discard dirty data\n");
-				mutex_unlock(&hevc->chunks_mutex);
-			}
-		}
 	} else if (hevc->dec_result == DEC_RESULT_EOS) {
 		struct PIC_s *pic;
 		hevc->eos = 1;
