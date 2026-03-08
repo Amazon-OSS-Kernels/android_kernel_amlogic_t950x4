@@ -348,10 +348,6 @@ static void lcd_power_ctrl(int status)
 	int value = -1;
 
 	LCDPR("%s: %d\n", __func__, status);
-	lcd_power->pwr_on_start_time = 0;
-	lcd_power->pwr_on_done_time = 0;
-	lcd_power->pwr_off_start_time = 0;
-	lcd_power->pwr_off_done_time = 0;
 	if (status) {
 		if (lcd_power->off_on_duration > 0) {
 			cur_time = sched_clock();
@@ -1396,6 +1392,9 @@ static int lcd_config_probe(struct platform_device *pdev)
 	const char *str = "none";
 	unsigned int val;
 	int ret = 0;
+#ifdef CONFIG_AMLOGIC_LCD_EXTERN
+	unsigned int i;
+#endif
 
 	if (lcd_driver->dev->of_node == NULL) {
 		LCDERR("dev of_node is null\n");
@@ -1404,7 +1403,6 @@ static int lcd_config_probe(struct platform_device *pdev)
 	}
 
 #ifdef CONFIG_AMLOGIC_LCD_EXTERN
-	unsigned int i;
 	for (i = 0; i < EXTERN_MUL_MAX; i++)
 		lcd_driver->extern_mul_index[i] = LCD_EXTERN_INDEX_INVALID;
 #endif

@@ -2601,8 +2601,8 @@ static inline bool vpts_expire(struct vframe_s *cur_vf,
 				ret = true;
 			} else {
 				ret = false;
-pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
-				__func__, src_w, src_h, src_ratio,
+				pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
+					__func__, src_w, src_h, src_ratio,
 						min_dst_ratio, max_dst_ratio,
 						dst_w, dst_h, dst_ratio);
 			}
@@ -2612,10 +2612,14 @@ pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
 				hold_frames++;
 			if (hold_frames >= HOLD_RATIO_TIMEOUT) {
 				ret = true;
-				pr_info("hold frames timeout: %d > %d\n",
-					hold_frames, HOLD_RATIO_TIMEOUT);
+				pr_info("%s hold frames timeout: %d > %d\n",
+					__func__, hold_frames, HOLD_RATIO_TIMEOUT);
 			}
 			return ret;
+		} else if (cur_vf && cur_vf != next_vf &&
+			cur_vf->width == next_vf->width &&
+			cur_vf->height == next_vf->height) {
+			hold_frames = 0;
 		}
 	}
 	if ((freerun_mode == FREERUN_NODUR) || hdmi_in_onvideo)
@@ -2679,7 +2683,9 @@ pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
 	}
 	/* check video PTS discontinuity */
 	if ((enable_video_discontinue_report) &&
-	    (first_frame_toggled) &&
+	    (first_frame_toggled || (!first_frame_toggled &&
+	    tsync_get_mode() == TSYNC_MODE_PCRMASTER && pts &&
+	    pts > systime && pts - systime > TIME_UNIT90K * 10)) &&
 	    (AM_ABSSUB(systime, pts) > tsync_vpts_discontinuity_margin()) &&
 	    ((next_vf->flag & VFRAME_FLAG_NO_DISCONTINUE) == 0)) {
 		/*
@@ -2706,7 +2712,8 @@ pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
 			pr_info("vsync_pts_align=%d\n", vsync_pts_align);
 		}
 
-		if ((int)(systime - pts) >= 0) {
+		if ((int)(systime - pts) >= 0 &&
+			tsync_get_mode() != TSYNC_MODE_PCRMASTER) {
 			if (next_vf->pts != 0)
 				tsync_avevent_locked(VIDEO_TSTAMP_DISCONTINUITY,
 						     next_vf->pts);
@@ -2751,6 +2758,9 @@ pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
 					vsync_pts_inc) >= 0xFFFFFFFF)
 					return true;
 			} else if (next_vf->pts == 0) {
+				if (pts == 0)
+					pts = timestamp_vpts_get() + (cur_vf ?
+						DUR2PTS(cur_vf->duration) : 0);
 				tsync_avevent_locked(VIDEO_TSTAMP_DISCONTINUITY,
 					pts);
 				return true;
@@ -2873,21 +2883,20 @@ pr_info("%s: src:%dx%d ratio:%d [%d, %d]; dst: %dx%d, ratio:%d\n",
 			org_vpts = timestamp_vpts_get() +
 				(cur_vf ? DUR2PTS(cur_vf->duration) : 0);
 		if ((org_vpts + vsync_pts_inc - systime) <=
-			M_PTS_SMOOTH_MIN) {
+			M_PTS_SMOOTH_MIN && !video_frame_repeat_count) {
 			smooth_sync_expired = 1;
 			video_frame_repeat_count = 0;
 			//pr_info("smooth_sync: ok\n");
 		}
 		if ((org_vpts + vsync_pts_inc - systime) <
-			M_PTS_SMOOTH_MAX &&
-			(org_vpts + vsync_pts_inc - systime) >
-			M_PTS_SMOOTH_MIN && smooth_sync_expired == 0) {
+			M_PTS_SMOOTH_MAX && smooth_sync_expired == 0) {
 			if (!video_frame_repeat_count) {
 				vpts_ref = org_vpts;
 				video_frame_repeat_count++;
 				//pr_info("smooth_sync enabled\n");
 			}
-			if ((int)(org_vpts + vsync_pts_inc - systime) > 0) {
+			if ((int)(org_vpts - vsync_pts_align - vsync_pts_inc -
+				systime) > 0) {
 				adjust_pts = vpts_ref + (vsync_pts_inc -
 					vsync_pts_inc / M_PTS_SMOOTH_FACTOR) *
 					video_frame_repeat_count;
