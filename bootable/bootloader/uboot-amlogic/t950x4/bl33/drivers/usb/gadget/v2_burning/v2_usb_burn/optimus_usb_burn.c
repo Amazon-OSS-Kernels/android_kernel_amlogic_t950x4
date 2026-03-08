@@ -35,14 +35,17 @@ int optimus_burn_package_in_usb(const char* sdc_cfg_file)
 {
     int rcode = 0;
 
+#ifndef USB_UPGRADE_IN_ONE_FILE
     DWN_MSG("usb start\n");
     rcode = run_command("usb start", 0);
     if (rcode) {
         DWN_ERR("Fail in init usb host, Does usb host not plugged in?\n");
         return __LINE__;
     }
+#endif
 
-#if 1//this asserted by 'run update' and 'aml_check_is_ready_for_sdc_produce'
+#ifndef USB_UPGRADE_IN_ONE_FILE
+//this asserted by 'run update' and 'aml_check_is_ready_for_sdc_produce'
     rcode = do_fat_get_fileSz(sdc_cfg_file);
     if (!rcode) {
         DWN_ERR("The [%s] not exist in udisk\n", sdc_cfg_file);
@@ -76,7 +79,9 @@ int do_usb_burn(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
     }
     #endif
 
+#ifndef USB_UPGRADE_IN_ONE_FILE
     setenv("usb_update","1");
+#endif
 
     if (argc < 2 ) {
         cmd_usage(cmdtp);
@@ -121,6 +126,20 @@ int do_usb_upgrade_fos( )
     strcpy(sdc_cfg_file, ammo_var);
     strcpy(sdc_cfg_file + strlen(ammo_var), "_usb_burn_package.img");
     printf("ready to flash %s\n", sdc_cfg_file);
+
+    setenv("usb_update","1");
+    DWN_MSG("usb start\n");
+    rcode = run_command("usb start", 0);
+    if (rcode) {
+        DWN_ERR("Fail in init usb host, Does usb host not plugged in?\n");
+        return __LINE__;
+    }
+
+    rcode = do_fat_get_fileSz(sdc_cfg_file);
+    if (!rcode) {
+        DWN_ERR("The [%s] not exist in udisk\n", sdc_cfg_file);
+        return __LINE__;
+    }
 
     argv[1] = sdc_cfg_file;
     rcode = do_usb_burn(NULL, 0, 2, argv);

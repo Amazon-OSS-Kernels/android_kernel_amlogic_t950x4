@@ -269,12 +269,14 @@ void main_loop(void)
 	if (is_transition_bootmode) {
 		if (!is_transition_done) {
 			ret = 0;
-#if !defined(UBOOT_TARGET_PRODUCT_NAME_ALMOND) && !defined(UBOOT_TARGET_PRODUCT_NAME_SHINE) && !defined(UBOOT_TARGET_PRODUCT_NAME_DAHLIA) || defined (UBOOT_TARGET_PRODUCT_NAME_HADRIAN)
+#if !defined(UBOOT_TARGET_PRODUCT_NAME_ALMOND) && !defined(UBOOT_TARGET_PRODUCT_NAME_SHINE) && !defined(UBOOT_TARGET_PRODUCT_NAME_DAHLIA)
 			ret += run_command("amlmmc erase dfs", 0);
 			ret += run_command("amlmmc erase dkernel", 0);
 			ret += run_command("amlmmc erase diag_userdata", 0);
 			ret += run_command("amlmmc erase dvendor", 0);
+#ifndef UBOOT_TARGET_PRODUCT_NAME_HADRIAN
 			ret += run_command("amlmmc erase oemconfig", 0);
+#endif
 			if (ret)
 				printf("Erase Diag partitions error\n");
 #endif

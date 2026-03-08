@@ -185,7 +185,7 @@ int idme_parse(const char *idme) {
 
     //max support 1024+32
     char buff[MAX_LINE_BUFF] = {0};
-    memcpy(buff, idme, MAX_LINE_BUFF);
+    memcpy(buff, idme, MAX_LINE_BUFF - 1);
 
     char *pb = strstr(buff, "=");
     if (!pb) {
@@ -194,6 +194,12 @@ int idme_parse(const char *idme) {
     }
 
     int len = strlen(buff);
+    //for standard format eg: a="1", board_id="ffffff00000000aa"
+    //so size must >= 5
+    if (len < 5) {
+        printf("wrong idme format config!\n");
+        return -1;
+    }
     int offset = pb - buff;
     if (nidme > MAX_IDME_NUM-1) {
         printf("max value(%d) support idme set!\n", MAX_IDME_NUM);
@@ -209,7 +215,7 @@ int idme_parse(const char *idme) {
 
 int arb_parse(const char *arb_buf) {
 	char buff[MAX_LINE_BUFF] = {0};
-	memcpy(buff, arb_buf, MAX_LINE_BUFF);
+	memcpy(buff, arb_buf, MAX_LINE_BUFF - 1);
 	char *pb = strstr(buff, "=");
 	if (!pb) {
 		//err config
@@ -225,7 +231,7 @@ int arb_parse(const char *arb_buf) {
 
 	//get arb version name and value
 	memcpy(arb_version[narb].name, buff, offset);
-	memcpy(arb_version[narb].value, buff+offset+1, len-offset);
+	memcpy(arb_version[narb].value, buff+offset+1, len-offset-1);
 
 	narb++;
 	return 0;
@@ -340,7 +346,7 @@ int arb_check_version(void)
 			}
 		}
 	}
-       if (bl2_flags & fip_flags & bl30_flags & bl31_flags & bl32_flags & bl33_flags)
+       if (bl2_flags && fip_flags && bl30_flags && bl31_flags && bl32_flags && bl33_flags)
                return 0;
        else {
                printf("check arb_version.txt fail!\n");

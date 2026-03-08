@@ -1,10 +1,4 @@
-
-/*
- *  Copyright (C) 2014-2018 Amlogic, Inc. All rights reserved.
- *
- *  All information contained herein is Amlogic confidential.
- *
- */
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 
 /*Mailbox driver*/
 #include <stdint.h>
