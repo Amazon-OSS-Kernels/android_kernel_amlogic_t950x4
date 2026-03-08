@@ -127,6 +127,7 @@
 #define CONFIG_IR_REMOTE_POWER_UP_KEY_VAL3 0xF20DFE01 //amlogic tv ir --- ch-
 #define CONFIG_IR_REMOTE_POWER_UP_KEY_VAL4 0XBA45BD02 //amlogic small ir--- power
 #define CONFIG_IR_REMOTE_POWER_UP_KEY_VAL5 0xe51afb04
+/*https://amazon.com*/
 
 #define CONFIG_IR_REMOTE_POWER_UP_KEY_VAL6	0xb9467d02 /* ABC power key */
 #define CONFIG_IR_REMOTE_POWER_UP_KEY_VAL7	0xa05f7d02 /* ABC netflix key */
