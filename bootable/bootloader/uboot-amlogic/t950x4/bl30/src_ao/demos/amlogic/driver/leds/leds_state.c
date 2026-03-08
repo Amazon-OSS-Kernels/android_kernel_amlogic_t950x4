@@ -583,7 +583,7 @@ int32_t xLedsStateSetBrightness(uint32_t id, uint32_t brightness)
 }
 
 #ifdef SHINE_PROJECT
-static int vGetBoardID(void) {
+int vGetBoardID(void) {
 		uint16_t usAdcData;
 	//	struct xAdcKeyInfo *adcKeyInfo;
 		struct AdcInstanceConfig config= {2, NO_AVERAGING, 1};

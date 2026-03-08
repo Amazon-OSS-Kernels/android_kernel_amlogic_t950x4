@@ -150,7 +150,7 @@ int32_t vLedPinmuxInit(void)
 #ifdef SHINE_PROJECT
 	if (led_max == 2) {
 		xPinmuxSet(GPIOH_5, PIN_FUNC4);
-		iprintf("%s: id: abc123 dual leds state init!\n", DRIVER_NAME);
+		iprintf("%s: id: ABC dual leds state init!\n", DRIVER_NAME);
 	}
 #endif
 	return 0;

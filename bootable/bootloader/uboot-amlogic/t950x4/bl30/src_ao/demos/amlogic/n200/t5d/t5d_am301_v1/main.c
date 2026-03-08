@@ -84,6 +84,9 @@ void vApplicationIdleHook( void );
 
 extern void trap_entry(void);
 extern void irq_entry(void);
+#ifdef SHINE_PROJECT
+extern int vGetBoardID(void);
+#endif
 
 #ifdef BL30_LOG_SHARE_TO_KERNEL
 struct ring_buffer * rb=NULL;
@@ -168,6 +171,10 @@ static void vPrintTask2( void *pvParameters )
 	}
 }
 #endif
+
+#ifdef SHINE_PROJECT
+extern int led_max;
+#endif
 void vLedControl()
 {
 	int32_t reason = ((REG32(AO_SEC_SD_CFG15) >> 12) & 0xf);
@@ -179,13 +186,39 @@ void vLedControl()
 	if(reason == 0) //cold boot
 #endif
 	{
+#if defined  (SHINE_PROJECT)
+		int board_id = vGetBoardID();
+		if (led_max == 2 && reason == 0) {
+			xLedsStateSetBrightness(1, 51); /*when dual-led, set red led on*/
+		} else if (5 == board_id && reason == 0) { /* abc123 led cannot be control */
+			printf("abc123 cold_boot don't control led\n");
+		} else {
+			xLedsStateSetBrightness(0, 51);
+		}
+#elif defined (HADRIAN_PROJECT)
+	if (reason == 0)
+		printf("hadrian cold_boot don't control led\n");
+	else
+		xLedsStateSetBrightness(0, 51);
+#else
 		printf("LED: set brightness 20%%\n");
 		xLedsStateSetBrightness(0, 51);
+#endif
 	}
 	else
 	{
+#ifdef SHINE_PROJECT
+		if (led_max == 2 && reason == 8) { /*set red led when shut_down reboot*/
+			printf("LED: set breathing\n");
+			xLedsStateSetBreath(1,4);
+		} else{
+			printf("LED: set breathing\n");
+			xLedsStateSetBreath(0,4);
+		}
+#else
 		printf("LED: set breathing\n");
 		xLedsStateSetBreath(0,4);
+#endif
 	}
 
 }

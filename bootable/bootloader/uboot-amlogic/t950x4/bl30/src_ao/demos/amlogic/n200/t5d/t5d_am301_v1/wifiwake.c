@@ -21,6 +21,7 @@ uint32_t wake_up_pin = 76;
 int led_brightness = 20;
 int poweroff_gpioh7 = 0;
 int led_flag = 0;
+int RC5_flag = 0;
 #endif
 
 #ifdef DAHLIA_PROJECT
@@ -69,10 +70,12 @@ void xETHPowerGPIO(void *data)
 		led_flag = *(((u32 *)data) + 1);
 	}
 	poweroff_gpioh7 = *(((u32 *)data) + 3);
+	RC5_flag = *(((u32 *)data) + 4);
         iprintf("xETHPowerGPIO: -wol_wake_pin=%d=======\n",*(u32 *)data);
         iprintf("xETHPowerGPIO: -led_flags=%d=======\n",*(((u32 *)data) + 1));
         iprintf("xETHPowerGPIO: -led_brightness=%d=======\n",*(((u32 *)data) + 2));
 	iprintf("xETHPowerGPIO: -power off GPIOH_7=%d=======\n",*(((u32 *)data) + 3));
+	iprintf("xETHPowerGPIO: -RC5_flag=%d=======\n",*(((u32 *)data) + 4));
 }
 #else
 

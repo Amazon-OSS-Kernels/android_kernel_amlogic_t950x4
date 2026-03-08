@@ -28,6 +28,10 @@ uint32_t g_eth_power_enable = 0;
 extern int hwid_ch2;
 #endif
 
+#ifdef SHINE_PROJECT
+extern int RC5_flag;
+#endif
+
 static TaskHandle_t cecTask = NULL;
 static int vdd_ee;
 static int vdd_cpu;
@@ -53,6 +57,13 @@ static IRPowerKey_t prvPowerKeyList[] = {
 	{ 0x9e610586, IR_NORMAL}, /* Insignia additional remote --- power */
 #if defined(SHINE_PROJECT) || defined (DAHLIA_PROJECT) || defined (HADRIAN_PROJECT)
 	{ 0xf2a0d5, IR_NORMAL}, /* TCL factory remote --- power */
+#endif
+#ifdef SHINE_PROJECT
+	{ 0x3e8c, IR_NORMAL}, /* panasonic --- power */
+	{ 0x3eab, IR_NORMAL}, /* panasonic--- ok */
+	{ 0x36a9, IR_NORMAL}, /* panasonic--- home */
+	{ 0x3e85, IR_CUSTOM_2}, /* panasonic--- prime video key */
+	{ 0x36b9, IR_CUSTOM_1}, /* panasonic--- netflix key */
 #endif
 	{}
         /* add more */
@@ -98,8 +109,14 @@ void Wifi_GpioIRQFree(void);
 void str_hw_init(void)
 {
 	/*enable device & wakeup source interrupt*/
-#if defined(SHINE_PROJECT) || defined (DAHLIA_PROJECT) || defined (HADRIAN_PROJECT)
+#if defined (DAHLIA_PROJECT) || defined (HADRIAN_PROJECT)
 	vIRInit(MODE_HARD_RCA_NEC, GPIOD_5, PIN_FUNC1, prvPowerKeyList, ARRAY_SIZE(prvPowerKeyList), vIRHandler);
+#elif defined (SHINE_PROJECT)
+	if(RC5_flag == 1){
+		vIRInit(MODE_HARD_RC5_NEC, GPIOD_5, PIN_FUNC1, prvPowerKeyList, ARRAY_SIZE(prvPowerKeyList), vIRHandler);
+	} else {
+		vIRInit(MODE_HARD_RCA_NEC, GPIOD_5, PIN_FUNC1, prvPowerKeyList, ARRAY_SIZE(prvPowerKeyList), vIRHandler);
+	}
 #else
 	vIRInit(MODE_HARD_NEC, GPIOD_5, PIN_FUNC1, prvPowerKeyList, ARRAY_SIZE(prvPowerKeyList), vIRHandler);
 #endif
