@@ -2218,7 +2218,8 @@ static irqreturn_t vmpeg12_isr_thread_fn(struct vdec_s *vdec, int irq)
 		new_pic->offset = offset;
 		new_pic->index = index;
 		if (((info & PICINFO_TYPE_MASK) == PICINFO_TYPE_I) ||
-			((info & PICINFO_TYPE_MASK) == PICINFO_TYPE_P)) {
+			((info & PICINFO_TYPE_MASK) == PICINFO_TYPE_P) ||
+			((info & PICINFO_TYPE_MASK) == PICINFO_TYPE_B)) {
 			if (hw->chunk) {
 				new_pic->pts_valid = hw->chunk->pts_valid;
 				new_pic->pts = hw->chunk->pts;

@@ -141,9 +141,15 @@ unsigned int h264_debug_cmd;
 
 static int ref_b_frame_error_max_count = 50;
 
+#ifdef CONFIG_ENABLE_AFD
+/*don't switch special P stream to I */
+static unsigned int dec_control = 0;
+#else
+/* switch special P stream to I to optimize jagge */
 static unsigned int dec_control =
 	DEC_CONTROL_FLAG_FORCE_2997_1080P_INTERLACE |
 	DEC_CONTROL_FLAG_FORCE_2500_576P_INTERLACE;
+#endif
 
 static unsigned int force_rate_streambase;
 static unsigned int force_rate_framebase;
@@ -3128,6 +3134,7 @@ static int post_video_frame(struct vdec_s *vdec, struct FrameStore *frame)
 			}
 		}
 #endif
+		vf->type_original = vf->type;
 		kfifo_put(&hw->display_q, (const struct vframe_s *)vf);
 		ATRACE_COUNTER(MODULE_NAME, vf->pts);
 		hw->vf_pre_count++;
@@ -3558,7 +3565,7 @@ static void config_decode_mode(struct vdec_h264_hw_s *hw)
 		WRITE_VREG(H264_DECODE_MODE,
 			DECODE_MODE_MULTI_FRAMEBASE);
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
-	else if (vdec->slave)
+	else if (vdec->slav)
 		WRITE_VREG(H264_DECODE_MODE,
 			(hw->got_valid_nal << 8) |
 			DECODE_MODE_MULTI_DVBAL);
@@ -4273,10 +4280,10 @@ static struct vframe_s *vh264_vf_get(void *op_arg)
 						__func__, vf->index);
 			} else {
 				dpb_print(DECODE_ID(hw), PRINT_FLAG_VDEC_DETAIL,
-				"%s buf_spec_num %d vf %p poc %d dur %d pts %d interval %dms\n",
+				"%s buf_spec_num %d vf %p poc %d dur %d pts %d interval %dms, type=%d\n",
 				__func__, BUFSPEC_INDEX(vf->index), vf,
 				p_H264_Dpb->mFrameStore[frame_index].poc,
-				vf->duration, vf->pts, frame_interval);
+				vf->duration, vf->pts, frame_interval, vf->type);
 			}
 		}
 		if (hw->last_frame_time > 0) {
@@ -5035,7 +5042,7 @@ static int vh264_set_params(struct vdec_h264_hw_s *hw,
 	u8 *colocate_vaddr = NULL;
 
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
-	if (vdec->master || vdec->slave)
+	if (vdec->master || vdec->slav)
 		used_reorder_dpb_size_margin =
 			reorder_dpb_size_margin_dv;
 #endif
@@ -6740,10 +6747,10 @@ pic_done_proc:
 		/* WRITE_VREG(DPB_STATUS_REG, H264_ACTION_SEARCH_HEAD); */
 		hw->dec_result = DEC_RESULT_DONE;
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
-		if (vdec->slave &&
+		if (vdec->slav &&
 			dec_dpb_status == H264_FIND_NEXT_DVEL_NAL) {
 			struct vdec_h264_hw_s *hw_el =
-			 (struct vdec_h264_hw_s *)(vdec->slave->private);
+			 (struct vdec_h264_hw_s *)(vdec->slav->private);
 			hw_el->got_valid_nal = 0;
 			hw->switch_dvlayer_flag = 1;
 		} else if (vdec->master &&
@@ -6778,7 +6785,7 @@ pic_done_proc:
 				if (hw->last_dec_picture)
 					set_aux_data(hw,
 						hw->last_dec_picture, 0, 0, NULL);
-			} else if (vdec->dolby_meta_with_el || vdec->slave) {
+			} else if (vdec->dolby_meta_with_el || vdec->slav) {
 				if (hw->last_dec_picture)
 					set_aux_data(hw, hw->last_dec_picture,
 						0, 0, NULL);
@@ -8682,7 +8689,7 @@ static int vmh264_get_ps_info(struct vdec_h264_hw_s *hw,
 	max_reference_size = (param4 >> 8) & 0xff;
 
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
-	if (vdec->master || vdec->slave)
+	if (vdec->master || vdec->slav)
 		used_reorder_dpb_size_margin =
 			reorder_dpb_size_margin_dv;
 #endif
@@ -9151,11 +9158,11 @@ result_done:
 
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
 	if (hw->switch_dvlayer_flag) {
-		if (vdec->slave)
-			vdec_set_next_sched(vdec, vdec->slave);
+		if (vdec->slav)
+			vdec_set_next_sched(vdec, vdec->slav);
 		else if (vdec->master)
 			vdec_set_next_sched(vdec, vdec->master);
-	} else if (vdec->slave || vdec->master)
+	} else if (vdec->slav || vdec->master)
 		vdec_set_next_sched(vdec, vdec);
 #endif
 
@@ -9434,7 +9441,7 @@ static void run(struct vdec_s *vdec, unsigned long mask,
 	}
 	/* hw->chunk = vdec_prepare_input(vdec); */
 #ifdef CONFIG_AMLOGIC_MEDIA_ENHANCEMENT_DOLBYVISION
-	if (vdec->slave || vdec->master)
+	if (vdec->slav || vdec->master)
 		vdec_set_flag(vdec, VDEC_FLAG_SELF_INPUT_CONTEXT);
 #endif
 	size = vdec_prepare_input(vdec, &hw->chunk);

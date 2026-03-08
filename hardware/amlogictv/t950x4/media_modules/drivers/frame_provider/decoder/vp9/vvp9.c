@@ -7896,8 +7896,7 @@ static int prepare_display_buf(struct VP9Decoder_s *pbi,
 
 		//fps == 96k / duration ,eg: 60fps == 96k / 1600
 		vp9_print(pbi, VP9_DEBUG_OUT_PTS,"pbi->frame_dur:%d \n",pbi->frame_dur);
-		if (vf->compWidth > 2560 && vf->compHeight > 1440
-			&& pbi->frame_dur > 0 && pbi->frame_dur <= 1602) {
+		if (vf->compWidth > 2560 && vf->compHeight > 1440) {
 			vp9_print(pbi, VP9_DEBUG_OUT_PTS,"VFRAME_FLAG_HIGH_BANDWIDTH\n");
 			vf->flag |= VFRAME_FLAG_HIGH_BANDWIDTH;
 		}
@@ -9146,6 +9145,13 @@ static irqreturn_t vvp9_isr_thread_fn(int irq, void *data)
 		}
 	}
 
+	if ((pbi->max_pic_h != 0) && (pbi->max_pic_w != 0) &&
+			(pbi->max_pic_h < pbi->vp9_param.p.height ||
+			pbi->max_pic_w < pbi->vp9_param.p.width)) {
+			pbi->fatal_error |= DECODER_FATAL_ERROR_SIZE_OVERFLOW;
+			return IRQ_HANDLED;
+	}
+
 	if (pbi->is_used_v4l) {
 		struct aml_vcodec_ctx *ctx =
 			(struct aml_vcodec_ctx *)(pbi->v4l2_ctx);
@@ -10047,8 +10053,12 @@ static int vvp9_stop(struct VP9Decoder_s *pbi)
 
 static int amvdec_vp9_mmu_init(struct VP9Decoder_s *pbi)
 {
-	int tvp_flag = vdec_secure(hw_to_vdec(pbi)) ?
+	uint tvp_flag = vdec_secure(hw_to_vdec(pbi)) ?
 		CODEC_MM_FLAGS_TVP : 0;
+#ifdef CONFIG_OSD_MEMORY
+	uint osd_flag = (hw_to_vdec(pbi)->frame_base_video_path ==
+		FRAME_BASE_PATH_IONVIDEO) ? CODEC_MM_FLAGS_SYS_FIRST : 0;
+#endif
 	int buf_size = vp9_max_mmu_buf_size(pbi->max_pic_w, pbi->max_pic_h);
 
 	pbi->need_cache_size = buf_size * SZ_1M;
@@ -10058,6 +10068,9 @@ static int amvdec_vp9_mmu_init(struct VP9Decoder_s *pbi)
 			pbi->index, FRAME_BUFFERS,
 			pbi->need_cache_size,
 			tvp_flag
+#ifdef CONFIG_OSD_MEMORY
+			| osd_flag
+#endif
 			);
 		if (!pbi->mmu_box) {
 			pr_err("vp9 alloc mmu box failed!!\n");
@@ -10070,6 +10083,9 @@ static int amvdec_vp9_mmu_init(struct VP9Decoder_s *pbi)
 			pbi->index, FRAME_BUFFERS,
 			pbi->need_cache_size,
 			tvp_flag
+#ifdef CONFIG_OSD_MEMORY
+			| osd_flag
+#endif
 			);
 		if (!pbi->mmu_box_dw) {
 			pr_err("vp9 alloc mmu dw box failed!!\n");
