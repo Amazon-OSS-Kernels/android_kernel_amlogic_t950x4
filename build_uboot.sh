@@ -120,6 +120,14 @@ function extract_tarball {
 function exec_build_uboot {
     pushd "${PLATFORM_EXTRACT_DIR}/${UBOOT_SUBPATH}"
 
+    #Add Symlink and copy needed file for Uboot Build.
+    ln -s ../../../../../t962x3/bl33/board/amlogic/primrose/mtk-bt-76x8/ \
+            bl33/board/amlogic/almond/mtk-bt-76x8
+    ln -s ../t962x3/bl2/ bl2
+    ln -s ../t962x3/bl31_1.3/ bl31_1.3
+    ln -s ../t962x3/bl32/ bl32
+    cp fip/mk mk
+
     ./mk $UBOOT_DEFCONFIG_NAME --systemroot
 
     if [[ $? -ne 0 ]]
