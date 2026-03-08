@@ -1,0 +1,2 @@
+
+ddr-y = ddr.o
