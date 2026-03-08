@@ -80,6 +80,7 @@
 /*  V1.1.85  optimize rt720 dvbs signal strength only for amz */
 /*  V1.1.86  fix significant fluctuations of dvbs snr */
 /*  V1.1.96  fix dvbs blind scan new miss 2150M */
+/*  V1.1.117.1  fix r842 dvbt/t2 LTE interferer test fail */
 /****************************************************/
 /****************************************************************/
 /*               AMLDTVDEMOD_VER  Description:                  */
@@ -96,8 +97,8 @@
 /*->The last four digits indicate the release time              */
 /****************************************************************/
 #define KERNEL_4_9_EN		1
-#define AMLDTVDEMOD_VER "V1.1.86"
-#define DTVDEMOD_VER	"2023/06/08: fix significant fluctuations of dvbs snr"
+#define AMLDTVDEMOD_VER "V1.1.117.1"
+#define DTVDEMOD_VER	"2023/11/02: fix r842 dvbt/t2 LTE interferer test fail"
 #define AMLDTVDEMOD_T2_FW_VER "V1551.20220524"
 #define DEMOD_DEVICE_NAME  "dtvdemod"
 
@@ -112,7 +113,7 @@
 
 #define TIMEOUT_ATSC		3000
 #define TIMEOUT_ATSC_STD	1500
-#define TIMEOUT_DVBT		3500
+#define TIMEOUT_DVBT		3000
 #define TIMEOUT_DVBS		2000
 #define TIMEOUT_DVBC		3000
 #define TIMEOUT_DVBT2		5000
@@ -244,6 +245,7 @@ struct aml_demod_para_real {
 	u32_t fef_info;
 	u32_t tps_cell_id;
 	u32_t ber;
+	int strength;
 };
 
 #define CAP_NAME_LEN	100

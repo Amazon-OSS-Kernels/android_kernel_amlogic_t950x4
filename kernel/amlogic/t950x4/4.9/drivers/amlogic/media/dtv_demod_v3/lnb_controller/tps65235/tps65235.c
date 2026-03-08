@@ -4,6 +4,7 @@
  */
 
 #include <linux/err.h>
+#include <linux/delay.h>
 #include "lnb_controller.h"
 #include "tps65235.h"
 #include "i2c_func.h"
@@ -203,6 +204,14 @@ static int tps65235_set_voltage(struct lnbc *lnbc, enum LNBC_VOLTAGE voltage)
 		ret = aml_demod_i2c_write(lnbc->i2c_adap, lnbc->i2c_addr, buffer, len);
 		if (ret)
 			return ret;
+	}
+
+	if (voltage != LNBC_VOLTAGE_OFF) {
+		if (lnbc->voltage != LNBC_VOLTAGE_OFF)
+			usleep_range(2000, 3000);
+	} else {
+		if (lnbc->voltage != LNBC_VOLTAGE_OFF)
+			usleep_range(6000, 7000);
 	}
 
 	lnbc->voltage = voltage;
@@ -433,6 +442,21 @@ static int create_1st_byte(struct lnbc *lnbc, enum LNBC_VOLTAGE voltage,
 	 * +------+------+------+------+------+
 	 */
 	*data = 0x40;
+
+	if (lnb_high_voltage == 3) {
+		lnbc->low_voltage = TPS65235_CONFIG_VOLTAGE_LOW_15_8V;
+		lnbc->high_voltage = TPS65235_CONFIG_VOLTAGE_HIGH_21_0V;
+	} else if (lnb_high_voltage == 2) {
+		lnbc->low_voltage = TPS65235_CONFIG_VOLTAGE_LOW_15_2V;
+		lnbc->high_voltage = TPS65235_CONFIG_VOLTAGE_HIGH_19_4V;
+	} else if (lnb_high_voltage == 1) {
+		lnbc->low_voltage = TPS65235_CONFIG_VOLTAGE_LOW_14_6V;
+		lnbc->high_voltage = TPS65235_CONFIG_VOLTAGE_HIGH_18_8V;
+	} else {
+		/* Default value */
+		lnbc->low_voltage = TPS65235_CONFIG_VOLTAGE_LOW_13_4V;
+		lnbc->high_voltage = TPS65235_CONFIG_VOLTAGE_HIGH_18_2V;
+	}
 
 	switch (voltage) {
 	case LNBC_VOLTAGE_OFF:

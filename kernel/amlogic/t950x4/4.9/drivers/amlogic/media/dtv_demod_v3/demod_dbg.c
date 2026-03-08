@@ -1685,6 +1685,14 @@ static ssize_t diseq_cmd_store(struct class *cla, struct class_attribute *attr,
 	struct dvb_diseqc_master_cmd cmd;
 	/*int ret;*/
 	struct amldtvdemod_device_s *devp = dtvdemod_get_dev();
+	struct dvb_frontend *fe;
+
+	if (unlikely(!devp)) {
+		PR_ERR("%s:devp is NULL\n", __func__);
+		return -1;
+	}
+
+	fe = &devp->frontend;
 
 	cnt = sscanf(bu, "%x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x",
 		    &tmpbuf[0], &tmpbuf[1], &tmpbuf[2], &tmpbuf[3],
@@ -1702,7 +1710,7 @@ static ssize_t diseq_cmd_store(struct class *cla, struct class_attribute *attr,
 	}
 	cmd.msg_len = cnt;
 	/* send diseqc msg */
-	aml_diseqc_send_cmd(&devp->diseqc, &cmd);
+	aml_diseqc_send_master_cmd(fe, &cmd);
 
 	return count;
 }

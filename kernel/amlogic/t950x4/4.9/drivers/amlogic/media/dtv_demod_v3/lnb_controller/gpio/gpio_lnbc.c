@@ -16,6 +16,7 @@
  */
 
 #include <linux/err.h>
+#include <linux/delay.h>
 #include "lnb_controller.h"
 #include "gpio_lnbc.h"
 
@@ -99,6 +100,16 @@ static int gpio_lnbc_set_voltage(struct lnbc *lnbc,
 
 	default:
 		return -EINVAL;
+	}
+
+	if (voltage != LNBC_VOLTAGE_OFF) {
+		if (lnbc->voltage != LNBC_VOLTAGE_OFF)
+			usleep_range(6000, 7000);
+		else
+			usleep_range(50000, 51000);
+	} else {
+		if (lnbc->voltage != LNBC_VOLTAGE_OFF)
+			usleep_range(24000, 25000);
 	}
 
 	lnbc->voltage = voltage;
