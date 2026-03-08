@@ -120,6 +120,18 @@ unsigned int idme_get_board_rev(void)
 }
 EXPORT_SYMBOL(idme_get_board_rev);
 
+int idme_get_oem_data(char *oem_data)
+{
+	struct device_node *idme_node;
+	int len;
+
+	idme_node = of_find_node_by_path("/idme/oem_data");
+	strcpy(oem_data, (char *)of_get_property(idme_node, "value", &len));
+	return 0;
+}
+
+EXPORT_SYMBOL(idme_get_oem_data);
+
 unsigned int idme_get_bootmode(void)
 {
 	struct device_node *idme_node;

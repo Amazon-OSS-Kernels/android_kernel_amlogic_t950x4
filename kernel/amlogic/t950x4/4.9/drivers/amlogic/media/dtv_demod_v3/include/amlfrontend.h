@@ -77,6 +77,10 @@
 /*  V1.1.82  fix T5D/T3 switch to T2 unlock */
 /*  V1.1.83  fix dvb-s unicable blind scan failed */
 /*  V1.1.84  optimize 8VSB CN */
+/*  V1.1.85  optimize rt720 dvbs signal strength only for amz */
+/*  V1.1.86  fix significant fluctuations of dvbs snr */
+/*  V1.1.96  fix dvbs blind scan new miss 2150M */
+/*  V1.1.117.1  fix r842 dvbt/t2 LTE interferer test fail */
 /****************************************************/
 /****************************************************************/
 /*               AMLDTVDEMOD_VER  Description:                  */
@@ -93,8 +97,8 @@
 /*->The last four digits indicate the release time              */
 /****************************************************************/
 #define KERNEL_4_9_EN		1
-#define AMLDTVDEMOD_VER "V1.1.83"
-#define DTVDEMOD_VER	"2023/4/7: optimize 8VSB CN"
+#define AMLDTVDEMOD_VER "V1.1.117.1"
+#define DTVDEMOD_VER	"2023/11/02: fix r842 dvbt/t2 LTE interferer test fail"
 #define AMLDTVDEMOD_T2_FW_VER "V1551.20220524"
 #define DEMOD_DEVICE_NAME  "dtvdemod"
 
@@ -241,6 +245,7 @@ struct aml_demod_para_real {
 	u32_t fef_info;
 	u32_t tps_cell_id;
 	u32_t ber;
+	int strength;
 };
 
 #define CAP_NAME_LEN	100
@@ -260,6 +265,12 @@ enum ddemod_timer_s {
 	D_TIMER_SET,
 	D_TIMER_DBG1,
 	D_TIMER_DBG2,
+};
+
+enum dtvblind_scan_step {
+	DTVBLIND_SCAN_NORMAL,
+	DTVBLIND_SCAN_STEP_LOCK,	 //step search on
+	DTVBLIND_SCAN_LOCKED_SEARCH, //Wait until the upper search is over
 };
 
 struct amldtvdemod_device_s {
@@ -379,6 +390,7 @@ struct amldtvdemod_device_s {
 	unsigned int blind_same_frec;
 	u32 blind_result_frequency;
 	u32 blind_result_symbol_rate;
+	enum dtvblind_scan_step blind_step;
 #ifdef CONFIG_AMLOGIC_DVB_COMPAT
 	struct dvbsx_singlecable_parameters singlecable_param;
 #endif

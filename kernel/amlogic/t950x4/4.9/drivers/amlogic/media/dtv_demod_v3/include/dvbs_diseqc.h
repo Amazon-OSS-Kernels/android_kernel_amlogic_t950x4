@@ -32,9 +32,15 @@ struct aml_diseqc {
 
 	struct completion rx_msg_ok;
 	struct completion tx_msg_ok;
+	//pull-up: lnb power, pull-down: diseqc rx 22KHz input;
+	struct gpio_desc *lnbc_enable_rx;
+
+	struct dvb_diseqc_master_cmd send_cmd;
+	unsigned char reply_msg[10];
+	unsigned char reply_len;
 
 	bool attached;
-	bool sar_adc_enable;
+	bool rx_enable;
 };
 
 extern u32 sendburst_on;
@@ -42,7 +48,7 @@ extern u32 diseqc_cmd_bypass;
 
 void demod_dump_reg_diseqc(void);
 void aml_diseqc_attach(struct device *dev, struct dvb_frontend *fe);
-u32 aml_diseqc_send_cmd(struct aml_diseqc *diseqc,
+int aml_diseqc_send_master_cmd(struct dvb_frontend *fe,
 		struct dvb_diseqc_master_cmd *cmd);
 void aml_diseqc_dbg_en(unsigned int val);
 void aml_diseqc_isr(struct aml_diseqc *diseqc);
@@ -51,6 +57,8 @@ void aml_diseqc_toneburst_sa(void);
 void aml_diseqc_toneburst_sb(void);
 void aml_diseqc_tone_on(struct aml_diseqc *diseqc, bool onoff);
 void aml_diseqc_flag_tone_on(u32 onoff);
+int aml_diseqc_set_lnb_voltage(struct aml_diseqc *diseqc,
+		enum fe_sec_voltage voltage);
 int aml_diseqc_set_voltage(struct dvb_frontend *fe,
 		enum fe_sec_voltage voltage);
 irqreturn_t aml_diseqc_isr_handler(int irq, void *data);

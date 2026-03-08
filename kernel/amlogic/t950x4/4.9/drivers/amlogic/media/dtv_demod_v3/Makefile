@@ -16,6 +16,7 @@ ccflags-y += -I.
 ccflags-y += -I$(srctree)/drivers/media/dvb-core
 #ccflags-y += -I$(srctree)/drivers/iio/adc
 ccflags-y += -I$(srctree)/include/media
+ccflags-y += -I$(srctree)/include/uapi/linux/dvb
 ccflags-y += -Idrivers/amlogic/media/dtv_demod_v3/include
 ccflags-y += -Idrivers/amlogic/media/dtv_demod_v3/lnb_controller
 ccflags-y += -Idrivers/amlogic/media/dtv_demod_v3/lnb_controller/wt20_1811
