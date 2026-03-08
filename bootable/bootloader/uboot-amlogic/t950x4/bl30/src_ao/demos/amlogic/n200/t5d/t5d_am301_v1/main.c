@@ -1,7 +1,7 @@
 /*
  * IntTest.c
  *
- *  Created on: 2018Äê10ÔÂ17ÈÕ
+ *  Created on: 2018ï¿½ï¿½10ï¿½ï¿½17ï¿½ï¿½
  *      Author: danialxie
  *
  *        This is an PIC interrupt nesting test for N200 SOC, NUCLEI, Inc.
@@ -173,7 +173,11 @@ void vLedControl()
 	int32_t reason = ((REG32(AO_SEC_SD_CFG15) >> 12) & 0xf);
 	// set bringthness to 20%, avoid led blink when power on the board
 
+#if defined (SHINE_PROJECT) || defined (HADRIAN_PROJECT)
+	if(reason == 0 || 14 == reason) //cold boot || slient ota (recovery_quiescent)
+#else
 	if(reason == 0) //cold boot
+#endif
 	{
 		printf("LED: set brightness 20%%\n");
 		xLedsStateSetBrightness(0, 51);

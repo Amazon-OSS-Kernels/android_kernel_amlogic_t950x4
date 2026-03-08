@@ -60,14 +60,19 @@ static IRPowerKey_t prvPowerKeyList[] = {
 	{ 0x3ac5bd02, IR_CUSTOM},
 	{ 0xb9467d02, IR_NORMAL}, /* ABC power key */
 	{ 0xa05f7d02, IR_CUSTOM_1}, /* ABC netflix key */
-        { 0x5ea17d02, IR_CUSTOM_2}, /* ABC prime video key */
+	{ 0x5ea17d02, IR_CUSTOM_2}, /* ABC prime video key */
 	{ 0x609f7d02, IR_NORMAL}, /* ABC home key */
-        { 0xb54a7d02, IR_NORMAL}, /* ABC enter key */
+	{ 0xb54a7d02, IR_NORMAL}, /* ABC enter key */
 	{ 0x5fa07d02, IR_NORMAL}, /* ABC voice search key */
 	{ 0x5da27d02, IR_CUSTOM_3}, /* ABC partner1 key */
 	{ 0x5ca37d02, IR_CUSTOM_4}, /* ABC partner2 key */
+        { 0x5ba47d02, IR_CUSTOM_5}, /* Grinnell presetting1 key */
+        { 0x5aa57d02, IR_CUSTOM_6}, /* Grinnell presetting2 key */
 	{ 0xf00f0586, IR_NORMAL}, /* Insignia remote --- power */
 	{ 0x9e610586, IR_NORMAL}, /* Insignia additional remote --- power */
+#if defined(SHINE_PROJECT) || defined (DAHLIA_PROJECT) || defined (HADRIAN_PROJECT)
+	{ 0xf2a0d5, IR_NORMAL}, /* TCL factory remote --- power */
+#endif
 	{}
         /* add more */
 };
@@ -87,6 +92,11 @@ static void vIRHandler(IRPowerKey_t *pkey)
 		buf[0] = REMOTE_CUS3_WAKEUP;
 	else if (pkey->type == IR_CUSTOM_4)
 		buf[0] = REMOTE_CUS_WAKEUP;
+	else if (pkey->type == IR_CUSTOM_5)
+		buf[0] = REMOTE_CUS5_WAKEUP;
+        else if (pkey->type == IR_CUSTOM_6)
+		buf[0] = REMOTE_CUS6_WAKEUP;
+
 
         /* do sth below  to wakeup*/
 	STR_Wakeup_src_Queue_Send_FromISR(buf);
@@ -107,7 +117,11 @@ void Wifi_GpioIRQFree(void);
 void str_hw_init(void)
 {
 	/*enable device & wakeup source interrupt*/
+#if defined(SHINE_PROJECT) || defined (DAHLIA_PROJECT) || defined (HADRIAN_PROJECT)
+	vIRInit(MODE_HARD_RCA_NEC, GPIOD_5, PIN_FUNC1, prvPowerKeyList, ARRAY_SIZE(prvPowerKeyList), vIRHandler);
+#else
 	vIRInit(MODE_HARD_NEC, GPIOD_5, PIN_FUNC1, prvPowerKeyList, ARRAY_SIZE(prvPowerKeyList), vIRHandler);
+#endif
 #ifdef CONFIG_ETH_WAKEUP
 	vETHInit(IRQ_ETH_PMT_NUM,eth_handler);
 #endif
@@ -208,7 +222,12 @@ void str_power_off(int shutdown_flag)
 	REG32(AO_GPIO_TEST_N) = (REG32(AO_GPIO_TEST_N) << 1) >> 1;
 #endif
 
-	if (shutdown_flag) {
+#if defined (SHINE_PROJECT) || defined (HADRIAN_PROJECT)
+	if (0)
+#else
+	if (shutdown_flag)
+#endif
+	{
 		/***power off VDDQ/VDDCPU***/
 		ret = xGpioSetDir(GPIOD_4,GPIO_DIR_OUT);
 		if (ret < 0) {
@@ -281,7 +300,7 @@ void eth_handler(void)
 void vETHInit(uint32_t ulIrq,function_ptr_t handler)
 {
 	RegisterIrq(ulIrq, 2, handler);
-	EnableIrq(ulIrq);
+//	EnableIrq(ulIrq);
 }
 
 void vETHDeint(uint32_t ulIrq)

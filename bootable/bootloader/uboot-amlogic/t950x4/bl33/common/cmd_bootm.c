@@ -222,6 +222,9 @@ int do_bootm(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
 	amzn_device_unlock_status |= amzn_target_is_onetime_unlocked();
 #endif // UFBL_FEATURE_ONETIME_UNLOCK
 
+#ifdef UFBL_FEATURE_TEMP_UNLOCK
+	amzn_device_unlock_status |= amzn_target_is_temp_unlocked();
+#endif // UFBL_FEATURE_TEMP_UNLOCK
 	if (amzn_device_unlock_status == 0) {
 		 nRet = image_verify((unsigned char*)(uintptr_t)nLoadAddr);
 	}

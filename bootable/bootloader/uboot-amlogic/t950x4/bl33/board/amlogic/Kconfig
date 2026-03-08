@@ -319,6 +319,10 @@ config SHINE
 	bool "Support amazon shine board"
 	default n
 
+config HADRIAN
+	bool "Support amazon hadrian board"
+	default n
+
 config DAHLIA
 	bool "Support amazon dahlia board"
 	default n
@@ -598,6 +602,10 @@ endif
 
 if SHINE
 source "board/amlogic/shine/Kconfig"
+endif
+
+if HADRIAN
+source "board/amlogic/hadrian/Kconfig"
 endif
 
 if DAHLIA

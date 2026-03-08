@@ -62,7 +62,7 @@ uint32_t power_mode;
 
 WakeUp_Reason vWakeupReason[] = {
 	[UDEFINED_WAKEUP] = { .name = "undefine" },
-	[CHARGING_WAKEUP] = { .name = "charging" },
+	[REMOTE_CUS5_WAKEUP] = { .name = "presetting1" },
 	[REMOTE_WAKEUP] = { .name = "remote" },
 	[RTC_WAKEUP] = { .name = "rtc" },
 	[BT_WAKEUP] = { .name = "bt" },
@@ -72,7 +72,7 @@ WakeUp_Reason vWakeupReason[] = {
 	[CEC_WAKEUP] = { .name = "cec" },
 	[REMOTE_CUS_WAKEUP] = { .name = "hulu" },
 	[ETH_PMT_WAKEUP] = { .name = "eth" },
-	[CECB_WAKEUP] = { .name = "cecb" },
+	[REMOTE_CUS6_WAKEUP] = { .name = "presetting2" },
 	[REMOTE_CUS1_WAKEUP] = { .name = "netflix" },
 	[REMOTE_CUS2_WAKEUP] = { .name = "prime video" },
 	[REMOTE_CUS3_WAKEUP] = { .name = "disney" },
@@ -83,6 +83,7 @@ void set_suspend_flag(void)
 	taskENTER_CRITICAL();
 	suspend_flag = 1;
 	taskEXIT_CRITICAL();
+	EnableIrq(73); //add eth debug
 }
 
 void vCEC_task(void *pvParameters)
@@ -283,9 +284,6 @@ static void vSTRTask( void *pvParameters )
 				case CEC_WAKEUP:
 					exit_reason = CEC_WAKEUP;
 					break;
-				case CECB_WAKEUP:
-					exit_reason = CECB_WAKEUP;
-					break;
 				case REMOTE_CUS_WAKEUP:
 					exit_reason = REMOTE_CUS_WAKEUP;
 					break;
@@ -306,6 +304,12 @@ static void vSTRTask( void *pvParameters )
 					break;
 				case REMOTE_CUS3_WAKEUP:
 					exit_reason = REMOTE_CUS3_WAKEUP;
+					break;
+				case REMOTE_CUS5_WAKEUP:
+					exit_reason = REMOTE_CUS5_WAKEUP;
+					break;
+				case REMOTE_CUS6_WAKEUP:
+					exit_reason = REMOTE_CUS6_WAKEUP;
 					break;
 				default:
 					break;

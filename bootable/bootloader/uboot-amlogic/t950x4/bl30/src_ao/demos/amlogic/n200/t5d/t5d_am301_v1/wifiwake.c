@@ -8,7 +8,12 @@
 #include "timers.h"   /* Software timer related API prototypes. */
 #include "semphr.h"   /* Semaphore related API prototypes. */
 
+#ifdef DAHLIA_PROJECT
+#define WIFI_WAKE_HOST GPIOB_13  //wifi_wake_host pin
+#else
 #define WIFI_WAKE_HOST GPIOB_12  //wifi_wake_host pin
+#endif
+
 #define INFO(fmt, args...) printf("[%s] " fmt "\n", __func__, ##args)
 
 void Wifi_IRQHandle(void);

@@ -87,6 +87,18 @@ LedCoord_t *BreathInflections[LED_BREATH_MAX_COUNT] = {
 	BreathInflections_amazon,
 };
 
+#ifdef DAHLIA_PROJECT
+LedDevice_t MesonLeds[] = {
+        {
+                .id = LED_ID_0,
+                .type = LED_TYPE_PWM,
+                .name = "sys_led",
+                .hardware_id = LED_PWM_C,
+                .polarity = LED_POLARITY_POSITIVE,  // AMAZON PWM is invert
+                .breathtime = 0,
+        },
+};
+#else
 LedDevice_t MesonLeds[] = {
 	{
 		.id = LED_ID_0,
@@ -97,6 +109,7 @@ LedDevice_t MesonLeds[] = {
 		.breathtime = 0,
 	},
 };
+#endif
 
 int32_t get_led_breath_len(uint32_t breath_id)
 {

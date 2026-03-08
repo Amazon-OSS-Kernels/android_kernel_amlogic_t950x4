@@ -43,12 +43,23 @@ enum PowerKeyType {
 	IR_CUSTOM_1,
 	IR_CUSTOM_2,
 	IR_CUSTOM_3,
-	IR_CUSTOM_4
+	IR_CUSTOM_4,
+	IR_CUSTOM_5,
+	IR_CUSTOM_6
 };
 
 /*supported protocol*/
 #define MODE_SOFT		0x0
 #define MODE_HARD_NEC		0x1
+#ifdef SHINE_PROJECT
+#define MODE_HARD_RCA		0x08
+#endif
+#ifdef  DAHLIA_PROJECT
+#define MODE_HARD_RCA		0x08
+#endif
+#ifdef  HADRIAN_PROJECT
+#define MODE_HARD_RCA		0x08
+#endif
 #define MODE_HARD_LEAGCY_NEC	0xff
 
 /**
@@ -68,8 +79,15 @@ enum PowerKeyType {
 
 
 /* sample for multi-protocol */
-/* #define MODE_HARD_RCA_NEC	(MODE_HARD_RCA | MODE_HARD_LEAGCY_NEC << 8) */
-
+#ifdef SHINE_PROJECT
+#define MODE_HARD_RCA_NEC	(MODE_HARD_RCA | MODE_HARD_LEAGCY_NEC << 8)
+#endif
+#ifdef  DAHLIA_PROJECT
+#define MODE_HARD_RCA_NEC	(MODE_HARD_RCA | MODE_HARD_LEAGCY_NEC << 8)
+#endif
+#ifdef HADRIAN_PROJECT
+#define MODE_HARD_RCA_NEC	(MODE_HARD_RCA | MODE_HARD_LEAGCY_NEC << 8)
+#endif
 /**
  *  xIRInit() - IR hardware initialize.
  *  @usWorkMode: supported protocol.

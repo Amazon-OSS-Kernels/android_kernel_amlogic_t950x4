@@ -147,6 +147,10 @@
 #include "idme_default_table_ABC.h"
 #endif
 
+#if defined(UFBL_PROJ_ABC)
+#include "idme_default_table_ABC.h"
+#endif
+
 #if defined(UFBL_PROJ_WONKA)
 #include "idme_default_table_wonka.h"
 #endif

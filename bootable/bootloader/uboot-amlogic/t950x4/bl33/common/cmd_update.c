@@ -27,6 +27,7 @@
 
 int num = 0;
 char partition[16][32];
+int narb = 0;
 
 typedef struct {
     char name[NAME_MAX];
@@ -36,6 +37,7 @@ typedef struct {
 int nidme = 0;
 idme_t idme_data[MAX_IDME_NUM];
 uint32_t mvn_1, mvn_2;
+idme_t arb_version[MAX_IDME_NUM];
 
 static u32 fb_width;
 static u32 fb_height;
@@ -205,11 +207,38 @@ int idme_parse(const char *idme) {
     return 0;
 }
 
-int arb_check(void)
+int arb_parse(const char *arb_buf) {
+	char buff[MAX_LINE_BUFF] = {0};
+	memcpy(buff, arb_buf, MAX_LINE_BUFF);
+	char *pb = strstr(buff, "=");
+	if (!pb) {
+		//err config
+		return -1;
+	}
+
+	int len = strlen(buff);
+	int offset = pb - buff;
+	if (narb > MAX_IDME_NUM-1) {
+		printf("max value(%d) support arb version set!\n", MAX_IDME_NUM);
+		return 0;
+	}
+
+	//get arb version name and value
+	memcpy(arb_version[narb].name, buff, offset);
+	memcpy(arb_version[narb].value, buff+offset+1, len-offset);
+
+	narb++;
+	return 0;
+}
+
+int arb_check_version(void)
 {
-	int i = 0;
+	int i = 0, ret = 0;
 	uint32_t bl2_flags = 0, fip_flags = 0, bl30_flags = 0, bl31_flags = 0, bl32_flags = 0, bl33_flags = 0;
-	char arb_version[64]={0};
+	ulong addr = 0;
+	int filesize = 0;
+	char out[MAX_LINE_BUFF] = {0};
+	uint32_t mvn_1 = 0, mvn_2 = 0;
 	printf("---before read_arb_version--\n");
 	read_arb_version(&mvn_1, &mvn_2);
 	printf("---after read_arb_version--\n");
@@ -219,66 +248,104 @@ int arb_check(void)
 	uint32_t bl30 = (mvn_1 >> 24) & 0xff;
 	uint32_t fip  = (mvn_2 >> 16) & 0xff;
 	uint32_t bl2  = (mvn_2 >> 24) & 0xff;
-	for (i = 0; i < MAX_IDME_NUM; i++) 
-	{
-		if(strncmp("BL2", idme_data[i].name, strlen("BL2"))==0)
-		{
-			bl2_flags =1;
-			printf("BL2=%s\n",idme_data[i].value);
-			if(bl2 > atoi(idme_data[i].value))
-			{
-				printf("%s version is low ...\n",idme_data[i].value);
-				return -1;
-			}
-		} else if (strncmp("FIP", idme_data[i].name, strlen("FIP"))==0) {
-			fip_flags = 1;
-			printf("FIP=%s\n",idme_data[i].value);
-			if(fip > atoi(idme_data[i].value))
-			{
-				printf("%s version is low ...\n",idme_data[i].value);
-				return -1;
-			}
-		} else if (strncmp("BL30", idme_data[i].name, strlen("BL30"))==0) {
-			bl30_flags = 1;
-			printf("BL30=%s\n",idme_data[i].value);
-			if(bl30 > atoi(idme_data[i].value))
-			{
-				printf("%s version is low ...\n",idme_data[i].value);
-				return -1;
-			}
-		} else if (strncmp("BL31", idme_data[i].name, strlen("BL31"))==0) {
-			bl31_flags = 1;
-			printf("BL31=%s\n",idme_data[i].value);
-			if(bl31 > atoi(idme_data[i].value))
-			{
-				printf("%s version is low ...\n",idme_data[i].value);
-				return -1;
-			}
-		}
-		else if (strncmp("BL32", idme_data[i].name, strlen("BL32"))==0) {
-			bl32_flags = 1;
-			printf("BL32=%s\n",idme_data[i].value);
-			if(bl32 > atoi(idme_data[i].value))
-			{
-				printf("%s version is low ...\n",idme_data[i].value);
-				return -1;
-			}
-		} else if (strncmp("BL33", idme_data[i].name, strlen("BL33"))==0) {
-			bl33_flags = 1;
-			printf("BL33=%s\n",idme_data[i].value);
-			if(bl33 > atoi(idme_data[i].value))
-			{
-				printf("%s version is low ...\n",idme_data[i].value);
-				return -1;
-			}
-		}
-	}
-	if (bl2_flags & fip_flags & bl30_flags & bl31_flags & bl32_flags & bl33_flags)
-		return 0;
-	else {
-		printf("BL2 FIP BL30 BL31 BL32 BL33 need to be defined in flash_script\n");
+
+	setenv("arbaddr", "0x3090000");
+	ret = run_command("fatload usb 0 ${arbaddr} arb_version.txt", 1);
+	if (ret < 0)
+        	return -1;
+	filesize = (int)getenv_hex("filesize", 0);
+
+	//malloc buf for read arb_version.txt
+	char *buf = (char *)malloc(256);
+	if (buf == NULL) {
+		printf("malloc buffer failed!\n");
 		return -1;
 	}
+
+	//get arb_version.txt
+	addr = simple_strtoul(getenv("arbaddr"), NULL, 16);
+	memset(buf, 0, 256);
+	memcpy(buf, (char *)addr, 256);
+	buf[filesize]= '\0';
+
+
+	//parse arb_version.txt
+	char *temp = strtok(buf,"\n");
+
+	while(temp)
+	{
+		memset(out, 0, MAX_LINE_BUFF);
+		strtrim(temp, out);
+
+		if (!arb_parse(out)) {
+			temp = strtok(NULL,"\n");
+			continue;
+		}
+		temp = strtok(NULL,"\n");
+	}
+
+	free(buf);
+
+	for (i = 0; i < narb; i++)
+	{
+		if(strncmp("BL2", arb_version[i].name, strlen("BL2"))==0)
+		{
+			bl2_flags =1;
+			printf("unsigned int BL2=%d\n", simple_strtoul(arb_version[i].value, NULL, 0));
+			if(bl2 > simple_strtoul(arb_version[i].value, NULL, 0))
+			{
+				printf("%s version is low ...\n",arb_version[i].value);
+				return -1;
+			}
+		} else if (strncmp("FIP", arb_version[i].name, strlen("FIP"))==0) {
+			fip_flags =1;
+			printf("unsigned int FIP=%d\n", simple_strtoul(arb_version[i].value, NULL, 0));
+			if(fip > simple_strtoul(arb_version[i].value, NULL, 0))
+			{
+				printf("%s version is low ...\n",arb_version[i].value);
+				return -1;
+			}
+		} else if (strncmp("BL30", arb_version[i].name, strlen("BL30"))==0) {
+			bl30_flags =1;
+			printf("unsigned int BL30=%d\n", simple_strtoul(arb_version[i].value, NULL, 0));
+			if(bl30 > simple_strtoul(arb_version[i].value, NULL, 0))
+			{
+				printf("%s version is low ...\n",arb_version[i].value);
+				return -1;
+			}
+		} else if (strncmp("BL31", arb_version[i].name, strlen("BL31"))==0) {
+			bl31_flags =1;
+			printf("unsigned int BL31=%d\n", simple_strtoul(arb_version[i].value, NULL, 0));
+			if(bl31 > simple_strtoul(arb_version[i].value, NULL, 0))
+			{
+				printf("%s version is low ...\n",arb_version[i].value);
+				return -1;
+			}
+		}
+		else if (strncmp("BL32", arb_version[i].name, strlen("BL32"))==0) {
+			bl32_flags =1;
+			printf("unsigned int BL32=%d\n", simple_strtoul(arb_version[i].value, NULL, 0));
+			if(bl32 > simple_strtoul(arb_version[i].value, NULL, 0))
+			{
+				printf("%s version is low ...\n",arb_version[i].value);
+				return -1;
+			}
+		} else if (strncmp("BL33", arb_version[i].name, strlen("BL33"))==0) {
+			bl33_flags =1;
+			printf("unsigned int BL33=%d\n", simple_strtoul(arb_version[i].value, NULL, 0));
+			if(bl33 > simple_strtoul(arb_version[i].value, NULL, 0))
+			{
+				printf("%s version is low ...\n",arb_version[i].value);
+				return -1;
+			}
+		}
+	}
+       if (bl2_flags & fip_flags & bl30_flags & bl31_flags & bl32_flags & bl33_flags)
+               return 0;
+       else {
+               printf("check arb_version.txt fail!\n");
+               return -1;
+       }
 }
 
 static int idme_set( void ) {
@@ -373,6 +440,8 @@ int do_uboot_update (cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
         printf("target is lockdonw , please unlock!\n");
         goto error;
     }
+
+    #ifndef USB_UPGRADE_IN_ONE_FILE
     ret = update_ui_init();
     if (ret < 0) {
         printf("Image flashing GUI init failure\n");
@@ -381,9 +450,10 @@ int do_uboot_update (cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
         show_flash_progress(0, 0, 0);
         printf("Image flashing GUI init done\n");
     }
+    #endif
 
     init_param();
-	idme_set();
+    idme_set();
 
     //get flash_script filesize
     int filesize = (int)getenv_hex("filesize", 0);
@@ -392,7 +462,7 @@ int do_uboot_update (cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
     char *buf = (char *)malloc(filesize+4);
     if (buf == NULL) {
         printf("malloc buffer(%d) failed!\n", filesize);
-		goto error;
+        goto error;
     }
 
     //get flash_script
@@ -420,12 +490,12 @@ int do_uboot_update (cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
         temp = strtok(NULL,"\n");
     }
 
-    if(arb_check() < 0)
-	    goto error;
-
     //free
     free(buf);
     buf=NULL;
+
+    if(arb_check_version() < 0)
+	    goto error;
 
     //check image whether exist
     char image[32] = {0};
@@ -443,11 +513,31 @@ int do_uboot_update (cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
         }
 
         if (image_check(image) == 0) {
+            #ifdef USB_UPGRADE_IN_ONE_FILE
+            printf("%s is not exist, try usb_burn\n", image);
+            ret += idme_set();
+            //if (ret)
+            //       goto error;
+            printf("go to usb_burn\n");
+            return 1;
+            #else
             printf("%s is not exist, break......\n", image);
             goto error;
+            #endif
         }
         printf("%s is exist\n", image);
     }
+
+    #ifdef USB_UPGRADE_IN_ONE_FILE
+    ret = update_ui_init();
+    if (ret < 0) {
+        printf("Image flashing GUI init failure\n");
+           goto error;
+    } else {
+        show_flash_progress(0, 0, 0);
+        printf("Image flashing GUI init done\n");
+    }
+    #endif
 
     image_update();
 
