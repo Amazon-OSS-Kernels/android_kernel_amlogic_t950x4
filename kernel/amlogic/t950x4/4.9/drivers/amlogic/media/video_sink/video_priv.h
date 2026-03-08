@@ -36,6 +36,10 @@
 #define DEBUG_FLAG_PRINT_DISPLAY_TIME       0x80
 #define DEBUG_FLAG_LOG_RDMA_LINE_MAX         0x100
 #define DEBUG_FLAG_BLACKOUT     0x200
+#define DEBUG_FLAG_NO_CLIP_SETTING     0x400
+#ifdef CONFIG_ENABLE_AFD
+#define DEBUG_FLAG_AFD_INFO	        0x8000
+#endif
 #define DEBUG_FLAG_TOGGLE_SKIP_KEEP_CURRENT  0x10000
 #define DEBUG_FLAG_TOGGLE_FRAME_PER_VSYNC    0x20000
 #define DEBUG_FLAG_RDMA_WAIT_1		     0x40000
@@ -115,6 +119,12 @@
 #define OP_FORCE_NOT_SWITCH_VF 4
 
 #define HOLD_RATIO_TIMEOUT 20
+
+enum tvin_surface_type_e {
+	TVIN_SOURCE_TYPE_OTHERS = 0,
+	TVIN_SOURCE_TYPE_DECODER = 1,  /*DTV*/
+	TVIN_SOURCE_TYPE_VDIN = 2,   /*ATV HDMIIN CVBS*/
+};
 
 enum vd_path_id {
 	VFM_PATH_DEF = -1,
@@ -226,6 +236,16 @@ struct blend_setting_s {
 	struct vpp_frame_par_s *frame_par;
 };
 
+struct clip_setting_s {
+	u32 id;
+	u32 misc_reg_offt;
+
+	u32 clip_max;
+	u32 clip_min;
+
+	bool clip_done;
+};
+
 struct pip_alpha_scpxn_s {
 	u32 scpxn_bgn_h[MAX_PIP_WINDOW];
 	u32 scpxn_end_h[MAX_PIP_WINDOW];
@@ -295,6 +315,8 @@ struct video_layer_s {
 	struct scaler_setting_s sc_setting;
 	struct blend_setting_s bld_setting;
 	struct fgrain_setting_s fgrain_setting;
+	struct clip_setting_s clip_setting;
+
 	u32 new_vframe_count;
 
 	u32 start_x_lines;
@@ -316,6 +338,7 @@ struct video_layer_s {
 	u8 enable_3d_mode;
 
 	u32 global_debug;
+	bool force_black;
 	bool vd1_vd2_mux;
 };
 
@@ -455,6 +478,8 @@ void vd_scaler_setting(
 void vd_blend_setting(
 	u8 layer_id,
 	struct blend_setting_s *setting);
+void vd_clip_setting(u8 layer_id,
+	struct clip_setting_s *setting);
 void proc_vd_vsc_phase_per_vsync(
 	u8 layer_id,
 	struct video_layer_s *layer,

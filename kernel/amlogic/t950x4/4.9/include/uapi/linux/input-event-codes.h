@@ -343,6 +343,8 @@
 #define KEY_POWER_CEC		252
 #define KEY_CUSTOM_4		0x2eb	/* APP_4 Vue Music key */
 #define KEY_CUSTOM_5		254
+#define KEY_CUSTOM_6            0x27e   /*Grinnell Presetting 1*/
+#define KEY_CUSTOM_7            0x27f   /*Grinnell Presetting 2*/
 
 #define KEY_VNUMPAD			0x2ec
 #define KEY_SETTINGS    249

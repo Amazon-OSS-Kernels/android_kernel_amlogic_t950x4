@@ -36,15 +36,16 @@ EXPORT_SYMBOL_GPL(create_function_device);
 
 #ifdef CONFIG_AMLOGIC_USB
 struct gadget_lock {
-	struct wakeup_source wakesrc;
+	struct wakeup_source *wakesrc;
 	bool held;
 };
+
 static struct gadget_lock Gadget_Lock;
 
 static void gadget_hold(struct gadget_lock *lock)
 {
 	if (!lock->held) {
-		__pm_stay_awake(&lock->wakesrc);
+		__pm_stay_awake(lock->wakesrc);
 		lock->held = true;
 	}
 }
@@ -52,7 +53,7 @@ static void gadget_hold(struct gadget_lock *lock)
 static void gadget_drop(struct gadget_lock *lock)
 {
 	if (lock->held) {
-		__pm_relax(&lock->wakesrc);
+		__pm_relax(lock->wakesrc);
 		lock->held = false;
 	}
 }
@@ -1303,9 +1304,7 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 	/* the gi->lock is hold by the caller */
 	cdev->gadget = gadget;
 	set_gadget_data(gadget, cdev);
-#ifdef CONFIG_AMLOGIC_USB
-	wakeup_source_init(&Gadget_Lock.wakesrc, "gadget-connect");
-#endif
+
 	ret = composite_dev_prepare(composite, cdev);
 	if (ret)
 		return ret;
@@ -1471,7 +1470,8 @@ static void android_work(struct work_struct *data)
 		pr_info("%s: sent uevent %s\n", __func__, configured[0]);
 		uevent_sent = true;
 #ifdef CONFIG_AMLOGIC_USB
-		gadget_hold(&Gadget_Lock);
+		if (Gadget_Lock.wakesrc)
+			gadget_hold(&Gadget_Lock);
 #endif
 	}
 
@@ -1481,7 +1481,8 @@ static void android_work(struct work_struct *data)
 		pr_info("%s: sent uevent %s\n", __func__, disconnected[0]);
 		uevent_sent = true;
 #ifdef CONFIG_AMLOGIC_USB
-		gadget_drop(&Gadget_Lock);
+		if (Gadget_Lock.wakesrc)
+			gadget_drop(&Gadget_Lock);
 #endif
 	}
 
@@ -1507,9 +1508,7 @@ static void configfs_composite_unbind(struct usb_gadget *gadget)
 	purge_configs_funcs(gi);
 	composite_dev_cleanup(cdev);
 	usb_ep_autoconfig_reset(cdev->gadget);
-#ifdef CONFIG_AMLOGIC_USB
-	wakeup_source_trash(&Gadget_Lock.wakesrc);
-#endif
+
 	cdev->gadget = NULL;
 	set_gadget_data(gadget, NULL);
 }
@@ -1804,6 +1803,12 @@ static int __init gadget_cfs_init(void)
 		return PTR_ERR(android_class);
 #endif
 
+#ifdef CONFIG_AMLOGIC_USB
+	Gadget_Lock.wakesrc = wakeup_source_register("gadget-connect");
+	if (!Gadget_Lock.wakesrc)
+		pr_info("----register  gadget-connect wakeup source  failed\n");
+#endif
+
 	return ret;
 }
 module_init(gadget_cfs_init);
@@ -1816,5 +1821,9 @@ static void __exit gadget_cfs_exit(void)
 		class_destroy(android_class);
 #endif
 
+#ifdef CONFIG_AMLOGIC_USB
+	if (Gadget_Lock.wakesrc)
+		wakeup_source_unregister(Gadget_Lock.wakesrc);
+#endif
 }
 module_exit(gadget_cfs_exit);

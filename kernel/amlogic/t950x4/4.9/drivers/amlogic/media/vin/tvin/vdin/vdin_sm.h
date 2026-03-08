@@ -58,12 +58,15 @@ enum tvin_sg_chg_flg {
 #define RE_CONFIG_HDR_EN	0x02
 #define RE_CONFIG_ALLM_EN	0x04
 
+#define VDIN_STABLED_CNT		500
+#define VDIN_SEND_EVENT_INTERVAL	50 /* Experience value can be adjusted */
+
 enum vdin_sm_log_level {
 	VDIN_SM_LOG_L_1 = 0x01,
 	VDIN_SM_LOG_L_2 = 0x02,
 	VDIN_SM_LOG_L_3 = 0x04,
 	VDIN_SM_LOG_L_4 = 0x08,
-
+	VDIN_SM_LOG_L_5 = 0x10,
 };
 
 struct tvin_sm_s {

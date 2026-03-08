@@ -27,18 +27,20 @@
 #define WOL_POWER_DISABLE 0
 
 
-static unsigned int wol_power_state = WOL_POWER_DISABLE;
-
+unsigned int wol_power_state = WOL_POWER_DISABLE;
+extern unsigned int support_mac_wol;
+extern void set_wol_flag(unsigned int flag);
 
 static int wol_power_proc_show(struct seq_file *seq, void *v)
 {
+/*
 	int scp_wol_state = WOL_POWER_DISABLE;
 
 	scp_wol_state = scpi_get_wol_power();
 
 	if ((scp_wol_state == 0) || (scp_wol_state == 1))
 		wol_power_state = scp_wol_state;
-
+*/
 	seq_printf(seq, "wol power state:%d\n", wol_power_state);
 	return 0;
 }
@@ -60,8 +62,12 @@ static ssize_t wol_power_proc_write(struct file *seq,
 	}
 
 	pr_info("set wol_power state=%d\n", value);
-	if (scpi_set_wol_power(value) == 0)
-		wol_power_state = value;
+#ifdef CONFIG_ENABLE_WOL_THR_UI
+	if (value != support_mac_wol)
+		set_wol_flag(value);
+#endif
+	scpi_set_wol_power(value);
+	wol_power_state = value;
 
 	return count;
 }

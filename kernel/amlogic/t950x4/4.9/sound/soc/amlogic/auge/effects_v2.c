@@ -726,6 +726,8 @@ static int effect_platform_probe(struct platform_device *pdev)
 		p_effect->chipinfo->reserved_frddr) {
 		aml_aed_set_frddr_reserved();
 	}
+	/* enable DC filter */
+	aed_dc_enable(true);
 
 	return 0;
 }

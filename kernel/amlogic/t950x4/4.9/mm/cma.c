@@ -624,24 +624,10 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align)
 	after = ktime_get();
 	ms =  ktime_to_ms(after) - ktime_to_ms(before);
 
-#ifdef CONFIG_AMAZON_METRICS_LOG
-	if (count >= 8192) {
-		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel",
-			"cma_alloc", "cma_alloc_latency_ms", (u32)ms,
-			"count", NULL, VITALS_NORMAL);
-		log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel", "Kernel",
-			"cma_alloc", "cma_alloc_page_count", count,
-			"count", NULL, VITALS_NORMAL);
-		if (page != NULL)
-			log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel",
-				"Kernel", "cma_alloc", "cma_alloc_success", 1,
-				"count", NULL, VITALS_NORMAL);
-		else
-			log_counter_to_vitals(ANDROID_LOG_INFO, "Kernel",
-				"Kernel", "cma_alloc", "cma_alloc_fail", 1,
-				"count", NULL, VITALS_NORMAL);
+#define CMA_ALLOC_LATENCY_WARN_THRESHOLD 1500
+	if (ms >= CMA_ALLOC_LATENCY_WARN_THRESHOLD) {
+		pr_info("alloc latency %lld ms too long for %d pages\n", ms, count);
 	}
-#endif
 
 	pr_debug("%s(): returned %p\n", __func__, page);
 	return page;

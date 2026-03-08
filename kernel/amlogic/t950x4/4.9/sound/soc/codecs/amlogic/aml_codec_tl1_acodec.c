@@ -77,7 +77,7 @@ struct tl1_acodec_priv {
 static const struct reg_default tl1_acodec_init_list[] = {
 	{ACODEC_0, 0x3430BFCF},
 	{ACODEC_1, 0x50503030},
-	{ACODEC_2, 0xFBFB0000},
+	{ACODEC_2, 0xFBFB6000},
 	{ACODEC_3, 0x00002222},
 	{ACODEC_4, 0x00010000},
 	{ACODEC_5, 0xFBFB0033},
@@ -285,13 +285,13 @@ static const struct soc_enum DAC_source_sel_enum = SOC_ENUM_SINGLE(
 static const struct snd_kcontrol_new tl1_acodec_snd_controls[] = {
 	/*PGA_IN Gain */
 	SOC_DOUBLE_TLV("PGA IN Gain", ACODEC_1,
-		       PGAL_IN_GAIN, PGAR_IN_GAIN,
-		       0x1f, 0, pga_in_tlv),
+			   PGAL_IN_GAIN, PGAR_IN_GAIN,
+			   0x1f, 0, pga_in_tlv),
 
 	/*ADC Digital Volume control */
 	SOC_DOUBLE_TLV("ADC Digital Capture Volume", ACODEC_1,
-		       ADCL_VC, ADCR_VC,
-		       0x7f, 0, adc_vol_tlv),
+			   ADCL_VC, ADCR_VC,
+			   0x7f, 0, adc_vol_tlv),
 
 	/*DAC Digital Volume control */
 	SOC_DOUBLE_TLV("DAC Digital Playback Volume",
@@ -305,7 +305,7 @@ static const struct snd_kcontrol_new tl1_acodec_snd_controls[] = {
 			   DAC2L_VC, DAC2R_VC,
 			   0xff, 0, dac2_vol_tlv),
 
-    /*DAC extra Digital Gain control */
+	/*DAC extra Digital Gain control */
 	SOC_ENUM_EXT("DAC Extra Digital Gain",
 			   DAC_Gain_enum,
 			   aml_DAC_Gain_get_enum,
@@ -321,6 +321,7 @@ static const struct snd_kcontrol_new tl1_acodec_snd_controls[] = {
 			   DAC_source_sel_enum,
 			   aml_DAC_source_sel_get_enum,
 			   aml_DAC_source_sel_set_enum),
+
 };
 
 /*pgain Left Channel Input */
@@ -579,6 +580,10 @@ static int tl1_acodec_dai_set_bias_level(struct snd_soc_codec *codec,
 		break;
 
 	case SND_SOC_BIAS_OFF:
+		snd_soc_update_bits(codec, ACODEC_2, 1 << DAC_SOFT_MUTE,
+							1 << DAC_SOFT_MUTE);
+		snd_soc_update_bits(codec, ACODEC_6, 1 << DAC2_SOFT_MUTE,
+							1 << DAC2_SOFT_MUTE);
 		snd_soc_write(codec, ACODEC_0, 0);
 		break;
 
@@ -648,40 +653,65 @@ static int tl1_acodec_dai_mute_stream(struct snd_soc_dai *dai, int mute,
 				      int stream)
 {
 	struct tl1_acodec_priv *aml_acodec =
-		snd_soc_codec_get_drvdata(dai->codec);
-	u32 reg_val;
-	int ret;
+				snd_soc_codec_get_drvdata(dai->codec);
+	struct snd_soc_codec *codec = aml_acodec->codec;
 
 	pr_debug("%s, mute:%d\n", __func__, mute);
 
 	if (stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		/* DAC 1 */
-		ret = regmap_read(aml_acodec->regmap,
-					ACODEC_2,
-					&reg_val);
-		if (mute)
-			reg_val |= (0x1<<DAC_SOFT_MUTE);
-		else
-			reg_val &= ~(0x1<<DAC_SOFT_MUTE);
-
-		ret = regmap_write(aml_acodec->regmap,
-					ACODEC_2,
-					reg_val);
-
-		/* DAC 2 */
-		ret = regmap_read(aml_acodec->regmap,
-					ACODEC_6,
-					&reg_val);
-		if (mute)
-			reg_val |= (0x1<<DAC2_SOFT_MUTE);
-		else
-			reg_val &= ~(0x1<<DAC2_SOFT_MUTE);
-
-		ret = regmap_write(aml_acodec->regmap,
-					ACODEC_6,
-					reg_val);
+		if (mute) {
+			/* DAC 1 */
+			snd_soc_update_bits(codec, ACODEC_2,
+						1 << DAC_SOFT_MUTE,
+						1 << DAC_SOFT_MUTE);
+			/* DAC 2 */
+			snd_soc_update_bits(codec, ACODEC_6,
+						1 << DAC2_SOFT_MUTE,
+						1 << DAC2_SOFT_MUTE);
+		} else {
+			snd_soc_update_bits(codec, ACODEC_2,
+						1 << DAC_SOFT_MUTE, 0);
+			snd_soc_update_bits(codec, ACODEC_6,
+						1 << DAC2_SOFT_MUTE, 0);
+		}
 	}
 
+	return 0;
+}
+
+static int tl1_acodec_dai_trigger(struct snd_pcm_substream *substream, int cmd,
+				   struct snd_soc_dai *dai)
+{
+	struct tl1_acodec_priv *aml_acodec =
+				snd_soc_codec_get_drvdata(dai->codec);
+	struct snd_soc_codec *codec = aml_acodec->codec;
+
+	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		switch (cmd) {
+		case SNDRV_PCM_TRIGGER_START:
+		case SNDRV_PCM_TRIGGER_RESUME:
+		case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
+			pr_debug("%s(), start\n", __func__);
+			snd_soc_update_bits(codec, ACODEC_2,
+						1 << DAC_SOFT_MUTE, 0);
+			snd_soc_update_bits(codec, ACODEC_6,
+						1 << DAC2_SOFT_MUTE, 0);
+			break;
+		case SNDRV_PCM_TRIGGER_STOP:
+		case SNDRV_PCM_TRIGGER_SUSPEND:
+		case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+			pr_debug("%s(), stop\n", __func__);
+			/* DAC 1 */
+			snd_soc_update_bits(codec, ACODEC_2,
+						1 << DAC_SOFT_MUTE,
+						1 << DAC_SOFT_MUTE);
+			/* DAC 2 */
+			snd_soc_update_bits(codec, ACODEC_6,
+						1 << DAC2_SOFT_MUTE,
+						1 << DAC2_SOFT_MUTE);
+			break;
+		}
+	}
 	return 0;
 }
 
@@ -691,6 +721,7 @@ struct snd_soc_dai_ops tl1_acodec_dai_ops = {
 	.set_fmt = tl1_acodec_dai_set_fmt,
 	.set_sysclk = tl1_acodec_dai_set_sysclk,
 	.mute_stream = tl1_acodec_dai_mute_stream,
+	.trigger = tl1_acodec_dai_trigger,
 };
 
 static int tl1_acodec_probe(struct snd_soc_codec *codec)

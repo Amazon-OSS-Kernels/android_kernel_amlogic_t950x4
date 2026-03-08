@@ -60,8 +60,13 @@
 #define MM_ALIGN_UP2N(addr, alg2n) ((addr+(1<<alg2n)-1)&(~((1<<alg2n)-1)))
 
 #define RES_IS_MAPED
+#ifdef CONFIG_PIP_DISABLE
+#define DEFAULT_TVP_SIZE_FOR_4K (120 * SZ_1M)
+#define DEFAULT_TVP_SIZE_FOR_NO4K (120 * SZ_1M)
+#else
 #define DEFAULT_TVP_SIZE_FOR_4K (236 * SZ_1M)
 #define DEFAULT_TVP_SIZE_FOR_NO4K (160 * SZ_1M)
+#endif
 #define DEFAULT_TVP_SEGMENT_MIN_SIZE (16 * SZ_1M)
 
 #define ALLOC_MAX_RETRY 1

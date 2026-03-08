@@ -33,8 +33,8 @@
 //#include "hdmi_rx_pktinfo.h"
 #include "hdmi_rx_edid.h"
 
-/* add i2c error monitor */
-#define RX_VER0 "ver.2021/12/08"
+/* fix long detection time issue */
+#define RX_VER0 "ver.2022/09/23"
 
 /*print type*/
 #define	LOG_EN		0x01
@@ -524,6 +524,7 @@ struct aud_info_s {
 
 struct phy_sts {
 	uint32_t cable_clk;
+	uint32_t cable_clk_pre;
 	uint32_t tmds_clk;
 	uint32_t aud_div;
 	uint32_t pll_rate;

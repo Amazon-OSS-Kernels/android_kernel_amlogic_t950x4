@@ -39,6 +39,10 @@
 #ifdef CONFIG_AMLOGIC_HDMITX
 #include <linux/amlogic/media/vout/hdmi_tx/hdmi_tx_ext.h>
 #endif
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+#include <linux/amlogic/pm.h>
+#include <linux/clk-provider.h>
+#endif
 
 #include "ddr_mngr.h"
 #include "tdm_hw.h"
@@ -2078,7 +2082,17 @@ static int aml_tdm_platform_suspend(struct platform_device *pdev,
 			pr_info("%s tdm pins disable!\n", __func__);
 		}
 	}
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	if (!IS_ERR(p_tdm->mclk2pad)) {
+		while (__clk_is_enabled(p_tdm->mclk2pad))
+			clk_disable_unprepare(p_tdm->mclk2pad);
+	}
 
+	if (!IS_ERR(p_tdm->mclk)) {
+		while (__clk_is_enabled(p_tdm->mclk))
+			clk_disable_unprepare(p_tdm->mclk);
+	}
+#endif
 	pr_info("%s tdm:(%d)\n", __func__, p_tdm->id);
 	return 0;
 }
@@ -2086,6 +2100,20 @@ static int aml_tdm_platform_suspend(struct platform_device *pdev,
 static void tdm_setclk_func(struct work_struct *p_work)
 {
 	struct aml_tdm *p_tdm = container_of(p_work, struct aml_tdm, work);
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	int ret;
+
+	if (!IS_ERR(p_tdm->mclk) && !IS_ERR(p_tdm->clk)) {
+		clk_set_parent(p_tdm->mclk, NULL);
+		ret = clk_set_parent(p_tdm->mclk, p_tdm->clk);
+	}
+
+	if (!IS_ERR(p_tdm->mclk2pad)) {
+		clk_set_parent(p_tdm->mclk2pad, NULL);
+		ret = clk_set_parent(p_tdm->mclk2pad, p_tdm->mclk);
+		clk_prepare_enable(p_tdm->mclk2pad);
+	}
+#endif
 	/*set default clk for output*/
 	if (p_tdm->start_clk_enable == 1 && !IS_ERR_OR_NULL(p_tdm->pin_ctl)) {
 		struct pinctrl_state *state = NULL;

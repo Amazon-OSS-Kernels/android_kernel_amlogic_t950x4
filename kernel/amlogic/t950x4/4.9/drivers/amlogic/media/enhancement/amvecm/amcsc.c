@@ -8108,13 +8108,15 @@ int amvecm_matrix_process(
 			       vd_path + 1);
 		}
 
-		/*if (pre_bs_proc_en != bs_proc_en) {
+		if (pre_bs_proc_en != bs_proc_en &&
+			!is_video_layer_on(VD1_PATH) &&
+			!is_video_layer_on(VD2_PATH)) {
 			if (is_video_layer_on(vd_path))
 				null_vf_cnt[vd_path] = 0;
 			else
 				force_fake = true;
 			pr_csc(4, "blue stretch force set on osd\n");
-		}*/
+		}
 
 		/* handle eye protect mode */
 		if ((cur_eye_protect_mode != wb_val[0]) &&

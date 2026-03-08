@@ -1464,6 +1464,13 @@ RESTART:
 	video_left = video_layer_left;
 	video_width = video_layer_width;
 	video_height = video_layer_height;
+
+#ifdef CONFIG_ENABLE_AFD
+	if (!(vpp_flags & VPP_FLAG_FORCE_NO_OFFSET)) {
+		video_top += video_layer_global_offset_y;
+		video_left += video_layer_global_offset_x;
+	}
+#else
 	if ((video_top == 0) && (video_left == 0) && (video_width <= 1)
 		&& (video_height <= 1)) {
 		/* special case to do full screen display */
@@ -1483,6 +1490,7 @@ RESTART:
 		video_top += video_layer_global_offset_y;
 		video_left += video_layer_global_offset_x;
 	}
+#endif
 
 	/*aspect ratio match */
 	if ((wide_mode >= VIDEO_WIDEOPTION_4_3_IGNORE)
@@ -3298,6 +3306,13 @@ RESTART:
 	video_left = video_layer_left;
 	video_width = video_layer_width;
 	video_height = video_layer_height;
+
+#ifdef CONFIG_ENABLE_AFD
+	if (!(vpp_flags & VPP_FLAG_FORCE_NO_OFFSET)) {
+		video_top += video_layer_global_offset_y;
+		video_left += video_layer_global_offset_x;
+	}
+#else
 	if ((video_top == 0) && (video_left == 0) && (video_width <= 1)
 		&& (video_height <= 1)) {
 		/* special case to do full screen display */
@@ -3307,6 +3322,7 @@ RESTART:
 		video_top += video_layer_global_offset_y;
 		video_left += video_layer_global_offset_x;
 	}
+#endif
 
 	ratio_x = (1 << 18);
 	ratio_y = (1 << 18);
@@ -3647,6 +3663,9 @@ int vpp_set_filters(
 	bool bypass_sr0 = bypass_sr;
 	bool bypass_sr1 = bypass_sr;
 	bool retry = false;
+#ifdef CONFIG_ENABLE_AFD
+	bool adjust = false;
+#endif
 
 	if (!input)
 		return ret;
@@ -3655,6 +3674,10 @@ int vpp_set_filters(
 
 RERTY:
 	vpp_flags = 0;
+#ifdef CONFIG_ENABLE_AFD
+	adjust = false;
+#endif
+
 	/* use local var to avoid the input data be overwriten */
 	memcpy(&local_input, input, sizeof(struct disp_info_s));
 
@@ -3792,9 +3815,81 @@ RERTY:
 		local_input.layer_height =
 			local_input.afd_pos.y_end -
 			local_input.afd_pos.y_start + 1;
+
+		if (super_debug)
+			pr_info("layer%d: afd pos=%d %d %d %d; crop= %d %d %d %d\n",
+				input->layer_id,
+				local_input.afd_pos.x_start,
+				local_input.afd_pos.y_start,
+				local_input.afd_pos.x_end,
+				local_input.afd_pos.y_end,
+				local_input.afd_crop.top,
+				local_input.afd_crop.left,
+				local_input.afd_crop.bottom,
+				local_input.afd_crop.right);
+
 		vpp_flags |= VPP_FLAG_FORCE_AFD_ENABLE;
 	}
+#ifdef CONFIG_ENABLE_AFD
+	if (local_input.layer_left == 0 &&
+	    local_input.layer_top == 0 &&
+	    local_input.layer_width <= 1 &&
+	    local_input.layer_height <= 1) {
+		/* special case to do full screen display */
+		local_input.layer_width = vinfo->width;
+		local_input.layer_height = vinfo->height;
+		vpp_flags |= VPP_FLAG_FORCE_NO_OFFSET;
+		adjust = true;
+	} else if (local_input.pps_support) {
+		/* TODO: remove it */
+		if (local_input.layer_width < 16 &&
+		    local_input.layer_height < 16) {
+			/* sanity check to move */
+			/* video out when the target size is too small */
+			local_input.layer_width = vinfo->width;
+			local_input.layer_height = vinfo->height;
+			local_input.layer_left = vinfo->width * 2;
+			adjust = true;
+		}
+	}
+
+	if (super_debug && adjust)
+		pr_info("layer%d: adjust pos from (%d %d %d %d) -> (%d %d %d %d)\n",
+			input->layer_id,
+			input->layer_left,
+			input->layer_top,
+			input->layer_left + input->layer_width - 1,
+			input->layer_top + input->layer_height - 1,
+			local_input.layer_left,
+			local_input.layer_top,
+			local_input.layer_left + local_input.layer_width - 1,
+			local_input.layer_top + local_input.layer_height - 1);
 #endif
+
+	/* TODO: mirror case */
+	if (local_input.reverse) {
+		s32 x_end, y_end;
+
+		/* reverse x/y start */
+		x_end = local_input.layer_left + local_input.layer_width - 1;
+		local_input.layer_left = vinfo->width - x_end - 1;
+		y_end = local_input.layer_top + local_input.layer_height - 1;
+		local_input.layer_top = vinfo->height - y_end - 1;
+		if (super_debug)
+			pr_info("layer%d: reverse:%s, pos (%d %d %d %d) -> (%d %d %d %d)\n",
+				input->layer_id,
+				local_input.reverse ? "true" : "false",
+				input->layer_left,
+				input->layer_top,
+				input->layer_left + input->layer_width - 1,
+				input->layer_top + input->layer_height - 1,
+				local_input.layer_left,
+				local_input.layer_top,
+				local_input.layer_left + local_input.layer_width - 1,
+				local_input.layer_top + local_input.layer_height - 1);
+	}
+#endif
+
 	/* don't restore the wide mode */
 	/* input->wide_mode = wide_mode; */
 	vpp_flags |= wide_mode | (aspect_ratio << VPP_FLAG_AR_BITS);

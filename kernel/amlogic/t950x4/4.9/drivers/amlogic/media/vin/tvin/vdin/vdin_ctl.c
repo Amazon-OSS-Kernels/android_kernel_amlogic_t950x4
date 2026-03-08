@@ -4804,7 +4804,7 @@ static int vdin_get_max_buf(struct vdin_dev_s *devp)
 		return -1;
 	}
 
-	return devp->frame_buff_num;
+	return devp->vfmem_max_cnt;
 }
 
 int vdin_event_cb(int type, void *data, void *op_arg)

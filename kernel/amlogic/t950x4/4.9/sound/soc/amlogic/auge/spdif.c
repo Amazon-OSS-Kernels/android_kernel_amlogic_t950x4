@@ -33,6 +33,10 @@
 #include <sound/soc.h>
 #include <sound/pcm_params.h>
 #include <sound/asoundef.h>
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+#include <linux/amlogic/pm.h>
+#include <linux/clk-provider.h>
+#endif
 
 #include "ddr_mngr.h"
 #include "spdif_hw.h"
@@ -492,6 +496,17 @@ static int aml_spdif_platform_suspend(
 	}
 	aml_spdif_enable(p_spdif->actrl,
 			    stream, p_spdif->id, false);
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	if (!IS_ERR(p_spdif->clk_spdifout)) {
+		while (__clk_is_enabled(p_spdif->clk_spdifout))
+			clk_disable_unprepare(p_spdif->clk_spdifout);
+	}
+
+	if (!IS_ERR(p_spdif->clk_spdifin)) {
+		while (__clk_is_enabled(p_spdif->clk_spdifin))
+			clk_disable_unprepare(p_spdif->clk_spdifin);
+	}
+#endif
 	pr_info("%s is mute\n", __func__);
 	return 0;
 }
@@ -501,6 +516,11 @@ static int aml_spdif_platform_resume(struct platform_device *pdev)
 	struct aml_spdif *p_spdif = dev_get_drvdata(&pdev->dev);
 	struct pinctrl_state *state = NULL;
 	int stream = SNDRV_PCM_STREAM_PLAYBACK;
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	int ret;
+#endif
+	if (p_spdif->mute)
+		return 0;
 
 	if (!IS_ERR_OR_NULL(p_spdif->pin_ctl)) {
 		state = pinctrl_lookup_state
@@ -508,8 +528,28 @@ static int aml_spdif_platform_resume(struct platform_device *pdev)
 		if (!IS_ERR_OR_NULL(state))
 			pinctrl_select_state(p_spdif->pin_ctl, state);
 	}
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	if (!IS_ERR(p_spdif->clk_spdifout)) {
+		clk_set_parent(p_spdif->clk_spdifout, NULL);
+		ret = clk_set_parent(p_spdif->clk_spdifout,
+				 p_spdif->sysclk);
+		if (ret)
+			dev_warn(&pdev->dev, "Can't set spdif clk_spdifout parent\n");
+		clk_prepare_enable(p_spdif->clk_spdifout);
+	}
+
+	if (!IS_ERR(p_spdif->clk_spdifin)) {
+		clk_set_parent(p_spdif->clk_spdifin, NULL);
+		ret = clk_set_parent(p_spdif->clk_spdifin,
+				 p_spdif->fixed_clk);
+		if (ret)
+			dev_warn(&pdev->dev, "Can't set spdif clk_spdifout parent\n");
+		clk_prepare_enable(p_spdif->clk_spdifin);
+	}
+#endif
 	aml_spdif_enable(p_spdif->actrl,
 			stream, p_spdif->id, true);
+	p_spdif->mute = false;
 	pr_info("%s is unmute\n", __func__);
 
 	return 0;

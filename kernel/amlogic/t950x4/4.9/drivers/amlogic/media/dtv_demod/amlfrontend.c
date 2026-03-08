@@ -1996,6 +1996,7 @@ static int atsc_j83b_detect_first(struct dvb_frontend *fe, enum fe_status *s)
 
 	if (strenth < THRD_TUNER_STRENTH_J83) {
 		*s = FE_TIMEDOUT;
+		devp->last_status = *s;
 		PR_ATSC("tuner:no signal!j83\n");
 		return 0;
 	}
@@ -2039,9 +2040,10 @@ static int atsc_j83b_detect_first(struct dvb_frontend *fe, enum fe_status *s)
 		msleep(50);
 	}
 
-
 	if (!check_ok)
 		*s = FE_TIMEDOUT;
+
+	devp->last_status = *s;
 
 	return 0;
 }

@@ -30,6 +30,9 @@
 #ifdef CONFIG_AMLOGIC_POWER
 #include <linux/amlogic/power_domain.h>
 #endif
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+#include <linux/amlogic/pm.h>
+#endif
 #include <linux/amlogic/media/vpu/vpu.h>
 #include "vpu_reg.h"
 #include "vpu.h"
@@ -66,6 +69,9 @@ struct vpu_conf_s vpu_conf = {
 	.vpu_clk0 = NULL,
 	.vpu_clk1 = NULL,
 	.vpu_clk = NULL,
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	.vapb_clk = NULL,
+#endif
 
 	.clk_vmod = NULL,
 };
@@ -215,7 +221,11 @@ static int switch_gp_pll(int flag)
 	return 0;
 }
 
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+static int vpu_clk_apply(unsigned int clk_level)
+#else
 static int adjust_vpu_clk(unsigned int clk_level)
+#endif
 {
 	unsigned int clk;
 	int ret = 0;
@@ -224,7 +234,11 @@ static int adjust_vpu_clk(unsigned int clk_level)
 	if (ret)
 		return -1;
 
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	if (vpu_clk_table[clk_level].mux == GPLL_CLK) {
+#else
 	if (vpu_clk_table[vpu_conf.clk_level].mux == GPLL_CLK) {
+#endif
 		if (vpu_conf.data->gp_pll_valid == 0) {
 			VPUERR("gp_pll is invalid\n");
 			return -1;
@@ -244,27 +258,55 @@ static int adjust_vpu_clk(unsigned int clk_level)
 		return -1;
 	}
 
+#ifndef CONFIG_POWER_CONSUMPTION_OPTIMIZE
 	vpu_conf.clk_level = clk_level;
-
+#endif
 	/* step 1:  switch to 2nd vpu clk patch */
 	clk = vpu_clk_table[vpu_conf.data->clk_level_dft].freq;
 	clk_set_rate(vpu_conf.vpu_clk1, clk);
 	clk_set_parent(vpu_conf.vpu_clk, vpu_conf.vpu_clk1);
 	udelay(10);
 	/* step 2:  adjust 1st vpu clk frequency */
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	clk = vpu_clk_table[clk_level].freq;
+#else
 	clk = vpu_clk_table[vpu_conf.clk_level].freq;
+#endif
 	clk_set_rate(vpu_conf.vpu_clk0, clk);
 	udelay(20);
 	/* step 3:  switch back to 1st vpu clk patch */
 	clk_set_parent(vpu_conf.vpu_clk, vpu_conf.vpu_clk0);
 
 	clk = clk_get_rate(vpu_conf.vpu_clk);
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	VPUPR("set vpu clk: %uHz(%d), readback: %uHz(0x%x)\n",
+		vpu_clk_table[clk_level].freq, clk_level,
+		clk, (vpu_hiu_read(vpu_conf.data->vpu_clk_reg)));
+#else
 	VPUPR("set vpu clk: %uHz(%d), readback: %uHz(0x%x)\n",
 		vpu_clk_table[vpu_conf.clk_level].freq, vpu_conf.clk_level,
 		clk, (vpu_hiu_read(vpu_conf.data->vpu_clk_reg)));
+#endif
 
 	return ret;
 }
+
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+static int adjust_vpu_clk(unsigned int clk_level)
+{
+	int ret = 0;
+
+	ret = vpu_chip_valid_check();
+	if (ret)
+		return -1;
+
+	vpu_conf.clk_level = clk_level;
+
+	ret = vpu_clk_apply(clk_level);
+
+	return ret;
+}
+#endif
 
 static int set_vpu_clk(unsigned int vclk)
 {
@@ -306,6 +348,36 @@ set_vpu_clk_limit:
 	mutex_unlock(&vpu_clk_mutex);
 	return ret;
 }
+
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+static int vapb_clk_switch(unsigned int flag)
+{
+	unsigned int clk;
+	int ret = 0;
+
+	ret = vpu_chip_valid_check();
+	if (ret)
+		return -1;
+
+	if ((IS_ERR_OR_NULL(vpu_conf.vapb_clk0)) ||
+		(IS_ERR_OR_NULL(vpu_conf.vapb_clk1)) ||
+		(IS_ERR_OR_NULL(vpu_conf.vapb_clk))) {
+		VPUERR("%s: vapb_clk\n", __func__);
+		return -1;
+	}
+
+	if (flag)
+		clk_set_parent(vpu_conf.vapb_clk, vpu_conf.vapb_clk0);
+	else
+		clk_set_parent(vpu_conf.vapb_clk, vpu_conf.vapb_clk1);
+
+	clk = clk_get_rate(vpu_conf.vapb_clk);
+	VPUPR("switch vapb_clk: %uHz(0x%x)\n",
+		clk, (vpu_hiu_read(vpu_conf.data->vapb_clk_reg)));
+
+	return ret;
+}
+#endif
 
 /* *********************************************** */
 /* VPU_CLK control */
@@ -1313,6 +1385,13 @@ static int remove_vpu_debug_class(void)
 #ifdef CONFIG_PM
 static int vpu_suspend(struct platform_device *pdev, pm_message_t state)
 {
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	if (!vpu_conf.data)
+		return -1;
+
+	vapb_clk_switch(0);
+	vpu_clk_apply(0);
+#endif
 	VPUPR("suspend clk: %uHz(0x%x)\n",
 		get_vpu_clk(), (vpu_hiu_read(vpu_conf.data->vpu_clk_reg)));
 	return 0;
@@ -1320,7 +1399,15 @@ static int vpu_suspend(struct platform_device *pdev, pm_message_t state)
 
 static int vpu_resume(struct platform_device *pdev)
 {
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	if (!vpu_conf.data)
+		return -1;
+
+	vapb_clk_switch(1);
+	vpu_clk_apply(vpu_conf.clk_level);
+#else
 	set_vpu_clk(vpu_conf.clk_level);
+#endif
 	VPUPR("resume clk: %uHz(0x%x)\n",
 		get_vpu_clk(), (vpu_hiu_read(vpu_conf.data->vpu_clk_reg)));
 	return 0;
@@ -1358,14 +1445,31 @@ static int get_vpu_config(struct platform_device *pdev)
 
 static void vpu_clktree_init(struct device *dev)
 {
-	struct clk *clk_vapb, *clk_vpu_intr;
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	struct clk *clk_vpu_intr;
 
+	/* init & enable vapb_clk */
+	vpu_conf.vapb_clk0 = devm_clk_get(dev, "vapb_clk0");
+	vpu_conf.vapb_clk1 = devm_clk_get(dev, "vapb_clk1");
+	vpu_conf.vapb_clk = devm_clk_get(dev, "vapb_clk");
+	if ((IS_ERR_OR_NULL(vpu_conf.vapb_clk0)) ||
+		(IS_ERR_OR_NULL(vpu_conf.vapb_clk1)) ||
+		(IS_ERR_OR_NULL(vpu_conf.vapb_clk))) {
+		VPUERR("%s: vapb_clk\n", __func__);
+	} else {
+		clk_set_parent(vpu_conf.vapb_clk, vpu_conf.vapb_clk0);
+		clk_prepare_enable(vpu_conf.vapb_clk);
+		clk_set_rate(vpu_conf.vapb_clk1, 100000000);
+	}
+#else
+	struct clk *clk_vapb, *clk_vpu_intr;
 	/* init & enable vapb_clk */
 	clk_vapb = devm_clk_get(dev, "vapb_clk");
 	if (IS_ERR_OR_NULL(clk_vapb))
 		VPUERR("%s: vapb_clk\n", __func__);
 	else
 		clk_prepare_enable(clk_vapb);
+#endif
 
 	clk_vpu_intr = devm_clk_get(dev, "vpu_intr_gate");
 	if (IS_ERR_OR_NULL(clk_vpu_intr))

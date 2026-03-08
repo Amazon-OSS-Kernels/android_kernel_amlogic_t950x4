@@ -64,7 +64,11 @@
 /* Ref.2019/04/25: tl1 vdin0 afbce dynamically switch support,
  *                 vpp also should support this function
  */
-#define VDIN_VER "ver:2021-0312: ioctrl viuloop add port"
+/* 20220331: starting state chg not send event */
+/* 20220408: get format convert when started */
+/* 20220811: state machine optimization */
+/* 20220819: ioctl node need add more protect */
+#define VDIN_VER "20220819:ioctl node need add more protect"
 
 enum vdin_work_mode_e {
 	VDIN_WORK_MD_NORMAL = 0,
@@ -224,6 +228,8 @@ enum vdin_vf_put_md {
 #define VDIN_ISR_MONITOR_RATIO	BIT(2)
 #define VDIN_ISR_MONITOR_GAME	BIT(4)
 #define VDIN_ISR_MONITOR_VS	BIT(5)
+
+#define VDIN_DBG_CNTL_IOCTL	BIT(10)
 
 /* *********************************************************************** */
 /* *** enum definitions ********************************************* */
@@ -466,6 +472,7 @@ struct vdin_dev_s {
 	struct vf_entry *last_wr_vfe;
 	unsigned int curr_field_type;
 	unsigned int curr_dv_flag;
+	unsigned int starting_chg;
 
 	char name[15];
 	/* bit0 TVIN_PARM_FLAG_CAP bit31: TVIN_PARM_FLAG_WORK_ON */
@@ -681,6 +688,7 @@ struct vdin_dev_s {
 
 	unsigned int tx_fmt;
 	unsigned int vd1_fmt;
+	unsigned int vdin_stable_cnt;
 };
 
 struct vdin_hist_s {

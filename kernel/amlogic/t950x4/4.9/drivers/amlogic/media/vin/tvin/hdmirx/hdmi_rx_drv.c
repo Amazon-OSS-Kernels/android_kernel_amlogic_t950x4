@@ -3108,6 +3108,9 @@ static int hdmirx_suspend(struct platform_device *pdev, pm_message_t state)
 	 * div must change togther.
 	 */
 	rx_set_suspend_edid_clk(true);
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	rx_clk_en(0);
+#endif
 	rx_pr("hdmirx: suspend success\n");
 	return 0;
 }
@@ -3118,6 +3121,9 @@ static int hdmirx_resume(struct platform_device *pdev)
 
 	hdevp = platform_get_drvdata(pdev);
 	add_timer(&hdevp->timer);
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	rx_clk_en(1);
+#endif
 #ifdef CONFIG_AMLOGIC_LEGACY_EARLY_SUSPEND
 	/* if early suspend not called, need to pw up phy here */
 	if (!early_suspend_flag)
@@ -3144,6 +3150,9 @@ static void hdmirx_shutdown(struct platform_device *pdev)
 	if (hdcp22_on)
 		hdcp_22_off();
 	hdmirx_top_irq_en(false);
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	rx_clk_en(0);
+#endif
 	rx_pr("[hdmirx]: shutdown success\n");
 }
 

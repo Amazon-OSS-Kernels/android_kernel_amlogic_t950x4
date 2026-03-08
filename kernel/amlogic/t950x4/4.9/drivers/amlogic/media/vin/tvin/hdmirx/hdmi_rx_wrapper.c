@@ -2310,7 +2310,7 @@ void hdmirx_open_port(enum tvin_port_e port)
 		if (rx.state >= FSM_SIG_STABLE)
 			rx.state = FSM_SIG_STABLE;
 		else if (rx.state >= FSM_HPD_HIGH)
-			rx.state = FSM_HPD_HIGH;
+			rx.state = FSM_HPD_LOW;
 	}
 	edid_update_flag = 0;
 	rx_pkt_initial();
@@ -2357,6 +2357,17 @@ void rx_nosig_monitor(void)
 	}
 }
 
+static bool is_cable_clk_changed(void)
+{
+	bool ret = false;
+
+	if (rx.state < FSM_EQ_START || rx.state > FSM_SIG_STABLE)
+		return ret;
+	if (abs(rx.phy.cable_clk - rx.phy.cable_clk_pre) > 5 * MHz)
+		ret = true;
+	return ret;
+}
+
 static void rx_cable_clk_monitor(void)
 {
 	static bool pre_sts;
@@ -2369,6 +2380,12 @@ static void rx_cable_clk_monitor(void)
 	if (pre_sts != rx.cableclk_stb_flg) {
 		pre_sts = rx.cableclk_stb_flg;
 		rx_pr("\nclk_stb_changed to = %d\n", pre_sts);
+	}
+	if (rx.cableclk_stb_flg) {
+		if (is_cable_clk_changed()) {
+			rx.cableclk_stb_flg = false;
+			rx_pr("clk changed\n");
+		}
 	}
 }
 
@@ -2697,6 +2714,7 @@ void rx_main_state_machine(void)
 				rx.state = FSM_EQ_START;
 				clk_stable_cnt = 0;
 				rx_pr("clk stable=%d\n", rx.phy.cable_clk);
+				rx.phy.cable_clk_pre = rx.phy.cable_clk;
 				rx.err_code = ERR_NONE;
 				rx.var.de_stable = false;
 			}
@@ -3595,6 +3613,14 @@ int hdmirx_debug(const char *buf, int size)
 		sm_pause = 0;
 	} else if (strncmp(tmpbuf, "iq", 2) == 0)
 		aml_phy_iq_skew_monitor();
+#ifdef CONFIG_POWER_CONSUMPTION_OPTIMIZE
+	else if (strncmp(tmpbuf, "clkoff", 6) == 0) {
+		if (tmpbuf[6] == '1')
+			rx_clk_en(1);
+		else
+			rx_clk_en(0);
+	}
+#endif
 	return 0;
 }
 

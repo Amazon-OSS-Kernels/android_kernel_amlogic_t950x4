@@ -91,6 +91,8 @@ int pre_vscaler_ntap_set[MAX_VD_LAYER];
 
 static DEFINE_SPINLOCK(video_onoff_lock);
 static DEFINE_SPINLOCK(video2_onoff_lock);
+#define VPP_VD2_CLIP_MISC0 0x1de3
+#define VPP_VD2_CLIP_MISC1 0x1de4
 
 /* VPU delay work */
 #define VPU_DELAYWORK_VPU_VD1_CLK			1
@@ -3339,6 +3341,34 @@ static void vd2_set_ipt(u32 enable)
 		data);
 }
 
+static void vd1_clip_setting(struct clip_setting_s *setting)
+{
+	u32 misc_off;
+
+	if (!setting)
+		return;
+
+	misc_off = setting->misc_reg_offt;
+	VSYNC_WR_MPEG_REG(VPP_VD1_CLIP_MISC0 + misc_off,
+		setting->clip_max);
+	VSYNC_WR_MPEG_REG(VPP_VD1_CLIP_MISC1 + misc_off,
+		setting->clip_min);
+}
+
+static void vd2_clip_setting(struct clip_setting_s *setting)
+{
+	u32 misc_off;
+
+	if (!setting)
+		return;
+
+	misc_off = setting->misc_reg_offt;
+	VSYNC_WR_MPEG_REG(VPP_VD2_CLIP_MISC0 + misc_off,
+		setting->clip_max);
+	VSYNC_WR_MPEG_REG(VPP_VD2_CLIP_MISC1 + misc_off,
+		setting->clip_min);
+}
+
 /*********************************************************
  * DV EL APIs
  *********************************************************/
@@ -4491,6 +4521,19 @@ void vd_blend_setting(
 		vd2_blend_setting(setting);
 }
 
+void vd_clip_setting(u8 layer_id,
+	struct clip_setting_s *setting)
+{
+	if (setting->clip_done)
+		return;
+
+	if (layer_id == 0)
+		vd1_clip_setting(setting);
+	else if (layer_id == 1)
+		vd2_clip_setting(setting);
+	setting->clip_done = true;
+}
+
 void proc_vd_vsc_phase_per_vsync(
 	u8 layer_id,
 	struct video_layer_s *layer,
@@ -4898,7 +4941,7 @@ void vpp_blend_update(
 			<< VPP_VD2_ALPHA_BIT);
 	}
 
-	if ((vd_layer[0].global_output == 0) ||
+	if ((vd_layer[0].global_output == 0 && !vd_layer[0].force_black) ||
 	    black_threshold_check(0)) {
 		vd_layer[0].enabled = 0;
 		/* preblend need disable together */
@@ -5348,6 +5391,8 @@ static int update_afd_param(u8 id,
 	struct afd_out_param out_p;
 	bool is_comp = false;
 	struct disp_info_s *layer_info = NULL;
+	struct video_layer_s *layer = NULL;
+
 	int ret;
 	u32 frame_ar;
 
@@ -5357,6 +5402,7 @@ static int update_afd_param(u8 id,
 	if (!vf || !vinfo)
 		return -1;
 
+	layer = &vd_layer[id];
 	layer_info = &glayer_info[id];
 
 	if (vf->type & VIDTYPE_COMPRESS)
@@ -5420,6 +5466,18 @@ static int update_afd_param(u8 id,
 	} else {
 		layer_info->afd_enable = false;
 	}
+
+	if (layer->global_debug & DEBUG_FLAG_AFD_INFO)
+		pr_info("%s: ret:%d; layer%d(%d %d %d %d) afd pos(%d %d %d %d) crop(%d %d %d %d) %s\n",
+			__func__, ret, id,
+			layer_info->layer_left, layer_info->layer_top,
+			layer_info->layer_width, layer_info->layer_height,
+			layer_info->afd_pos.x_start, layer_info->afd_pos.y_start,
+			layer_info->afd_pos.x_end, layer_info->afd_pos.y_end,
+			layer_info->afd_crop.top, layer_info->afd_crop.left,
+			layer_info->afd_crop.bottom, layer_info->afd_crop.right,
+			layer_info->afd_enable ? "enable" : "disable");
+
 	return ret;
 }
 #endif
@@ -6802,6 +6860,14 @@ int video_early_init(struct amvideo_device_data_s *p_amvideo)
 		/* vd_layer[i].global_output = 1; */
 		vd_layer[i].keep_frame_id = 0xff;
 		vd_layer[i].disable_video = VIDEO_DISABLE_FORNEXT;
+
+		/* clip config */
+		vd_layer[i].clip_setting.id = i;
+		vd_layer[i].clip_setting.misc_reg_offt = cur_dev->vpp_off;
+		vd_layer[i].clip_setting.clip_max = 0x3fffffff;
+		vd_layer[i].clip_setting.clip_min = 0;
+		vd_layer[i].clip_setting.clip_done = true;
+
 		vpp_disp_info_init(&glayer_info[i], i);
 		memset(&gpic_info[i], 0, sizeof(struct vframe_pic_mode_s));
 		glayer_info[i].wide_mode = 1;
