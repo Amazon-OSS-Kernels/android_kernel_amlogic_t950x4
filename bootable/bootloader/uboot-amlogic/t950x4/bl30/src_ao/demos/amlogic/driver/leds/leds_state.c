@@ -17,10 +17,17 @@
 #include <leds_plat.h>
 #include <leds_state.h>
 #include "mailbox-api.h"
-
+#ifdef SHINE_PROJECT
+#include "keypad.h"
+#include "saradc.h"
+#endif
 /* todo: wait for stick mem ready */
 static int32_t *PLedStickMem[LED_ID_MAX];
 extern LedCoord_t *BreathInflections[];
+#ifdef SHINE_PROJECT
+int led_max;
+#endif
+
 
 uint32_t LedMask[STICK_LED_INVAIL] = {
 	STICK_LED_STATE_MASK,
@@ -35,10 +42,18 @@ static int32_t prvStickMemLedRead(uint32_t id, enum StickMemLedIdx index, uint32
 {
 	uint32_t temp;
 
+#ifdef SHINE_PROJECT
+	if ((index >= STICK_LED_INVAIL) || (id >= led_max)) {
+		iprintf("%s: index: %d id: %ld read stick mem fail!\n", DRIVER_NAME, index, id);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+#else
 	if ((index >= STICK_LED_INVAIL) || (id >= LED_ID_MAX)) {
 		iprintf("%s: index: %d id: %ld read stick mem fail!\n", DRIVER_NAME, index, id);
 		return -pdFREERTOS_ERRNO_EINVAL;
 	}
+#endif
+
 
 	if (!PLedStickMem[id]) {
 		iprintf("%s: id: %ld stick mem no ready!\n", DRIVER_NAME, id);
@@ -54,11 +69,17 @@ static int32_t prvStickMemLedRead(uint32_t id, enum StickMemLedIdx index, uint32
 static int32_t prvStickMemLedWrite(uint32_t id, enum StickMemLedIdx index, uint32_t data)
 {
 	uint32_t temp;
-
+#ifdef SHINE_PROJECT
+	if ((index >= STICK_LED_INVAIL) || (id >= led_max)) {
+		iprintf("%s: index: %d id: %ld write stick mem fail!\n", DRIVER_NAME, index, id);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+#else
 	if ((index >= STICK_LED_INVAIL) || (id >= LED_ID_MAX)) {
 		iprintf("%s: index: %d id: %ld write stick mem fail!\n", DRIVER_NAME, index, id);
 		return -pdFREERTOS_ERRNO_EINVAL;
 	}
+#endif
 
 	if (!PLedStickMem[id]) {
 		iprintf("%s: id: %ld stick mem no ready!\n", DRIVER_NAME, id);
@@ -413,19 +434,33 @@ static void vPrintLedsStatus(TimerHandle_t xTimer)
 	uint32_t i, state;
 
 	//taskENTER_CRITICAL();
+#ifdef SHINE_PROJECT
+	for (i = 0; i < led_max; i++) {
+		prvStickMemLedRead(i , STICK_LED_STATE, &state);
+		prvLedStateMachine(state, i);
+	}
+#else
 	for (i = 0; i < LED_ID_MAX; i++) {
 		prvStickMemLedRead(i , STICK_LED_STATE, &state);
 		prvLedStateMachine(state, i);
 	}
+#endif
 	//taskEXIT_CRITICAL();
 }
 
 int32_t xLedsStateSetBlinkBreath(uint32_t id, uint32_t times, uint32_t high_ms, uint32_t low_ms, uint32_t high_br, uint32_t low_br)
 {
+#ifdef SHINE_PROJECT
+	if ((id >= led_max) || (times > LED_MAX_BLINK_CNT)) {
+		iprintf("%s: id: %ld times: %ld set blink breath fail! maxid: %d maxtime: %d\n", DRIVER_NAME, id, times, led_max - 1, LED_MAX_BLINK_CNT);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+#else
 	if ((id >= LED_ID_MAX) || (times > LED_MAX_BLINK_CNT)) {
 		iprintf("%s: id: %ld times: %ld set blink breath fail! maxid: %d maxtime: %d\n", DRIVER_NAME, id, times, LED_ID_MAX - 1, LED_MAX_BLINK_CNT);
 		return -pdFREERTOS_ERRNO_EINVAL;
 	}
+#endif
 
 	if ((high_ms > LED_MAX_HIGH_MS) || (low_ms > LED_MAX_HIGH_MS)) {
 		iprintf("%s: high: %ldms low: %ldms set blink breath fail! maxhigh: %dms maxlow: %dms\n", DRIVER_NAME, high_ms, low_ms, LED_MAX_HIGH_MS, LED_MAX_LOW_MS);
@@ -446,10 +481,17 @@ int32_t xLedsStateSetBlinkBreath(uint32_t id, uint32_t times, uint32_t high_ms, 
 
 int32_t xLedsStateSetBlinkOn(uint32_t id, uint32_t times, uint32_t high_ms, uint32_t low_ms, uint32_t high_br, uint32_t low_br)
 {
+#ifdef SHINE_PROJECT
+	if ((id >= led_max) || (times > LED_MAX_BLINK_CNT)) {
+		iprintf("%s: id: %ld times: %ld set blink on fail! maxid: %d maxtime: %d\n", DRIVER_NAME, id, times, led_max - 1, LED_MAX_BLINK_CNT);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+#else
 	if ((id >= LED_ID_MAX) || (times > LED_MAX_BLINK_CNT)) {
 		iprintf("%s: id: %ld times: %ld set blink on fail! maxid: %d maxtime: %d\n", DRIVER_NAME, id, times, LED_ID_MAX - 1, LED_MAX_BLINK_CNT);
 		return -pdFREERTOS_ERRNO_EINVAL;
 	}
+#endif
 
 	if ((high_ms > LED_MAX_HIGH_MS) || (low_ms > LED_MAX_HIGH_MS)) {
 		iprintf("%s: high: %ldms low: %ldms set blink on fail! maxhigh: %dms maxlow: %dms\n", DRIVER_NAME, high_ms, low_ms, LED_MAX_HIGH_MS, LED_MAX_LOW_MS);
@@ -470,10 +512,17 @@ int32_t xLedsStateSetBlinkOn(uint32_t id, uint32_t times, uint32_t high_ms, uint
 
 int32_t xLedsStateSetBlinkOff(uint32_t id, uint32_t times, uint32_t high_ms, uint32_t low_ms, uint32_t high_br, uint32_t low_br)
 {
+#ifdef SHINE_PROJECT
+	if ((id >= led_max) || (times > LED_MAX_BLINK_CNT)) {
+		iprintf("%s: id: %ld times: %ld set blink off fail! maxid: %d maxtime: %d\n", DRIVER_NAME, id, times, led_max - 1, LED_MAX_BLINK_CNT);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+#else
 	if ((id >= LED_ID_MAX) || (times > LED_MAX_BLINK_CNT)) {
 		iprintf("%s: id: %ld times: %ld set blink off fail! maxid: %d maxtime: %d\n", DRIVER_NAME, id, times, LED_ID_MAX - 1, LED_MAX_BLINK_CNT);
 		return -pdFREERTOS_ERRNO_EINVAL;
 	}
+#endif
 
 	if ((high_ms > LED_MAX_HIGH_MS) || (low_ms > LED_MAX_HIGH_MS)) {
 		iprintf("%s: high: %ldms low: %ldms set blink off fail! maxhigh: %dms maxlow: %dms\n", DRIVER_NAME, high_ms, low_ms, LED_MAX_HIGH_MS, LED_MAX_LOW_MS);
@@ -494,10 +543,17 @@ int32_t xLedsStateSetBlinkOff(uint32_t id, uint32_t times, uint32_t high_ms, uin
 
 int32_t xLedsStateSetBreath(uint32_t id, uint32_t breath_id)
 {
+#ifdef SHINE_PROJECT
+	if ((id >= led_max) || (breath_id >= LED_BREATH_MAX_COUNT)) {
+		iprintf("%s: id: %ld breath id: %ld set breath fail! maxid: %d maxbreath id: %d\n", DRIVER_NAME, id, breath_id, led_max - 1, LED_BREATH_MAX_COUNT - 1);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+#else
 	if ((id >= LED_ID_MAX) || (breath_id >= LED_BREATH_MAX_COUNT)) {
 		iprintf("%s: id: %ld breath id: %ld set breath fail! maxid: %d maxbreath id: %d\n", DRIVER_NAME, id, breath_id, LED_ID_MAX - 1, LED_BREATH_MAX_COUNT - 1);
 		return -pdFREERTOS_ERRNO_EINVAL;
 	}
+#endif
 
 	MesonLeds[id].breathtime = 0;
 	prvStickMemLedWrite(id, STICK_LED_BREATH_ID, breath_id);
@@ -508,10 +564,17 @@ int32_t xLedsStateSetBreath(uint32_t id, uint32_t breath_id)
 
 int32_t xLedsStateSetBrightness(uint32_t id, uint32_t brightness)
 {
+#ifdef SHINE_PROJECT
+	if ((id >= led_max) || (brightness > LED_FULL)) {
+		iprintf("%s: id: %ld brightness: %ld set brightness fail! maxid: %d maxbrightness: %d\n", DRIVER_NAME, id, brightness, led_max - 1, LED_FULL);
+		return -pdFREERTOS_ERRNO_EINVAL;
+	}
+#else
 	if ((id >= LED_ID_MAX) || (brightness > LED_FULL)) {
 		iprintf("%s: id: %ld brightness: %ld set brightness fail! maxid: %d maxbrightness: %d\n", DRIVER_NAME, id, brightness, LED_ID_MAX - 1, LED_FULL);
 		return -pdFREERTOS_ERRNO_EINVAL;
 	}
+#endif
 
 	prvStickMemLedWrite(id, STICK_LED_BRIGHTNESS, brightness);
 	prvStickMemLedWrite(id, STICK_LED_STATE, LED_STATE_BRIGHTNESS);
@@ -519,12 +582,52 @@ int32_t xLedsStateSetBrightness(uint32_t id, uint32_t brightness)
 	return 0;
 }
 
+#ifdef SHINE_PROJECT
+static int vGetBoardID(void) {
+		uint16_t usAdcData;
+	//	struct xAdcKeyInfo *adcKeyInfo;
+		struct AdcInstanceConfig config= {2, NO_AVERAGING, 1};
+	//	vAdcInit(SAMPLE_MODE_POLL);
+	//	vAdcHwEnable();
+		xAdcGetSample(&usAdcData, 1, &(config),
+			SAMPLE_MODE_POLL);
+	//	vAdcHwDisable();
+	//	vAdcDeinit(SAMPLE_MODE_POLL);
+		printf("usAdcData=0x%x\n",usAdcData);
+		usAdcData = usAdcData >> 2;
+		int idx = 0;
+		//ID numbet = 13: 0.00%, 8.27%, 16.33%, 24.24%, 32.67%, 41.05%,
+		//50.00%, 58.95%, 67.33%, 75.76%, 83.67%, 91.73%, 100.00%
+		const unsigned int	sam_val[] = {0x2a, 0x7d, 0xcf, 0x123, 0x179,\
+		0x1d1, 0x22d, 0x285, 0x2db, 0x32f, 0x381, 0x3d4, 0x3ff};
+		const unsigned int SAMP_COUNT = sizeof(sam_val)/sizeof(unsigned int);
+		// PROTO BOARD the ssw adc channel is 2;
+		for (idx=0; idx<SAMP_COUNT; idx++)
+		{
+					if (usAdcData <= sam_val[idx])
+							break;
+		}
+		return idx;
+
+}
+#endif
+
 int32_t xLedsStateInit(void)
 {
 	TimerHandle_t xLedsTimer = NULL;
 	int32_t ret, i;
-
 	iprintf("%s: leds state init!\n", DRIVER_NAME);
+#ifdef SHINE_PROJECT
+	int board_id;
+	board_id = vGetBoardID();
+	iprintf("get board id =%d=======\n",board_id);
+	if (board_id == 1) {
+		led_max = 2;
+	} else {
+		led_max = 1;
+	}
+	iprintf("shine xLedsStateInit=====led_max = %d=======\n",led_max);
+#endif
 	/* TODO: free */
 	/* apply pwm */
 	for (i = 0; i < LED_ID_MAX; i++) {
@@ -557,12 +660,17 @@ int32_t xLedsStateInit(void)
 
 	/* pinmux needs setting at the end */
 	ret = vLedPinmuxInit();
-
+#ifdef SHINE_PROJECT
+	for (i = 0; i < led_max; i++) {
+		// set bringthness to 0, avoid led blink when power on the board
+		prvPwmLedSetBrightness(i, 0);
+	}
+#else
 	for (i = 0; i < LED_ID_MAX; i++) {
 		// set bringthness to 0, avoid led blink when power on the board
 		prvPwmLedSetBrightness(i, 0);
 	}
-
+#endif
 	return ret;
 }
 

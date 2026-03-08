@@ -30,6 +30,9 @@ enum led_pwm_id {
 
 enum led_id {
 	LED_ID_0 = 0,
+#ifdef SHINE_PROJECT
+	LED_ID_1 = 1,
+#endif
 	LED_ID_MAX,
 };
 

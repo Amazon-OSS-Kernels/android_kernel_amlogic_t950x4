@@ -136,6 +136,7 @@ void system_resume(uint32_t pm)
 #ifdef SHINE_PROJECT
 extern int led_brightness;
 extern int poweroff_gpioh7;
+extern int led_flag;
 #endif
 void system_suspend(uint32_t pm)
 {
@@ -185,10 +186,16 @@ void system_suspend(uint32_t pm)
 	str_power_off(shutdown_flag);
 #ifdef HADRIAN_PROJECT
 	printf("LED:Brightness 50%%\n");
-        xLedsStateSetBrightness(0, 128);
+        xLedsStateSetBrightness(0, 40);
 #elif  SHINE_PROJECT
 	printf("LED:Brightness %d%%\n", led_brightness);
-        xLedsStateSetBrightness(0, led_brightness*255/100);
+	printf("LED:led_flag %d%%\n", led_flag);
+	if (led_flag == 2) {
+		xLedsStateSetBrightness(1, led_brightness*255/100);
+		xLedsStateSetBrightness(0, 0);
+	} else {
+		xLedsStateSetBrightness(0, led_brightness*255/100);
+	}
 #else
 	printf("LED:Brightness 20%%\n");
 	xLedsStateSetBrightness(0, 51);

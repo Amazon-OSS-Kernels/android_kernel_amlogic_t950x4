@@ -20,6 +20,7 @@
 uint32_t wake_up_pin = 76;
 int led_brightness = 20;
 int poweroff_gpioh7 = 0;
+int led_flag = 0;
 #endif
 
 void Wifi_IRQHandle(void);
@@ -59,6 +60,9 @@ void xETHPowerGPIO(void *data)
 	}
 	if(*(((u32 *)data) + 2)){
 		led_brightness = *(((u32 *)data) + 2);
+	}
+	if(*(((u32 *)data) + 1)){
+		led_flag = *(((u32 *)data) + 1);
 	}
 	poweroff_gpioh7 = *(((u32 *)data) + 3);
         iprintf("xETHPowerGPIO: -wol_wake_pin=%d=======\n",*(u32 *)data);

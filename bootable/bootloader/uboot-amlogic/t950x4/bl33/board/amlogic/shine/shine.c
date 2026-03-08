@@ -737,23 +737,29 @@ void set_mail_box_data(void)
 	if (strcmp(wol_gpio_value, "null") == 0) {
                 printf("%s, get WOL_GPIO item failed!\n", __func__);
 	}
-	led_flag_value = IniGetString("DEFAULT", "LED_FLAG", "null");
-	if (strcmp(led_flag_value, "null") == 0) {
-                printf("%s, get LED_FLAG item failed!\n", __func__);
-	}
 	led_brightness_value = IniGetString("DEFAULT", "LED_BRIGHTNESS", "null");
 	if (strcmp(led_brightness_value, "null") == 0) {
-		printf("%s, get LED_FLAG item failed!\n", __func__);
+		printf("%s, get LED_BRIGHTNESS item failed!\n", __func__);
 	}
 	buad_rate = IniGetString("DEFAULT", "baud_rate", "null");
 	if (strcmp(buad_rate, "null") == 0) {
-		printf("%s, get LED_FLAG item failed!\n", __func__);
+		printf("%s, get baud_rate item failed!\n", __func__);
 	}
 	buad_rate_index = atoi(buad_rate);
 	model_name_data[0] = atoi(wol_gpio_value);
-	model_name_data[1] = atoi(led_flag_value);
 	model_name_data[2] = atoi(led_brightness_value);
 	model_name_data[3] = Need_power_off_GPIOH7();
+	IniParserUninit();
+	IniParserInit();
+	if (IniParseFile(get_model_sum_path()) < 0) {
+                printf("%s, model ini load file error!\n", __func__);
+                return;
+        }
+	led_flag_value = IniGetString("DEFAULT", "LED_FLAG", "null");
+        if (strcmp(led_flag_value, "null") == 0) {
+                printf("%s, get LED_FLAG item failed!\n", __func__);
+        }
+	model_name_data[1] = atoi(led_flag_value);
 	setenv("led_flag_value",led_flag_value);
 	printf("set_WOL_GPIO:%d\n",model_name_data[0]);
 	printf("set_LED_flag:%d\n",model_name_data[1]);
@@ -801,7 +807,6 @@ int board_late_init(void)
 			}
 		}
 	}
-	set_mail_box_data();
 	//update env before anyone using it
 	run_command("get_rebootmode; echo reboot_mode=${reboot_mode}; "\
 					"if test ${reboot_mode} = factory_reset; then "\
@@ -810,6 +815,7 @@ int board_late_init(void)
 						"setenv lcd_init_level 1;"\
 					"else if test ${reboot_mode} = recovery_quiescent; then "\
 						"setenv lcd_init_level 1;fi;fi;fi;", 0);
+	set_mail_box_data();
 	if (bl_status == 0 )
 	{
 		run_command("if test ${reboot_mode} = watchdog_reboot; then "\
