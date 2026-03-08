@@ -323,8 +323,8 @@ config ABC
 	bool "Support amazon ABC board"
 	default n
 
-config ABC
-	bool "Support amazon ABC board"
+config DAHLIA
+	bool "Support amazon dahlia board"
 	default n
 
 if GXB_SKT_V1
@@ -608,8 +608,8 @@ if ABC
 source "board/amlogic/ABC/Kconfig"
 endif
 
-if ABC
-source "board/amlogic/ABC/Kconfig"
+if DAHLIA
+source "board/amlogic/dahlia/Kconfig"
 endif
 
 
