@@ -31,6 +31,9 @@ uint32_t get_reason_flag(void);
 void *xMboxGetWakeupReason(void *msg);
 void *xMboxClrWakeupReason(void *msg);
 void set_suspend_flag(void);
+#ifdef SHINE_PROJECT
+extern vGetBoardID(void);
+#endif
 
 SemaphoreHandle_t xSTRSemaphore = NULL;
 QueueHandle_t xSTRQueue = NULL;
@@ -105,6 +108,10 @@ __attribute__((weak)) void vDDR_resume(uint32_t st_f)
 	st_f = st_f;
 }
 
+#ifdef SHINE_PROJECT
+extern int led_flag;
+#endif
+
 void system_resume(uint32_t pm)
 {
 	uint32_t shutdown_flag = 0;
@@ -113,7 +120,15 @@ void system_resume(uint32_t pm)
 	{
 		shutdown_flag = 1;
 		printf("LED:ON\n");
+#ifdef SHINE_PROJECT
+		if (led_flag == 2) {
+			xLedsStateSetBreath(1,4);
+		} else {
+			xLedsStateSetBreath(0,4);
+		}
+#else
 		xLedsStateSetBreath(0,4);
+#endif
 	}
 	else
 	{
@@ -133,7 +148,10 @@ void system_resume(uint32_t pm)
 	if (shutdown_flag)
 		watchdog_reset_system();
 }
-
+#ifdef SHINE_PROJECT
+extern int led_brightness;
+extern int poweroff_gpioh7;
+#endif
 void system_suspend(uint32_t pm)
 {
 	uint32_t shutdown_flag = 0;
@@ -142,7 +160,7 @@ void system_suspend(uint32_t pm)
         ret = xGpioSetDir(GPIOH_7,GPIO_DIR_OUT);
         if (ret < 0) {
                 printf("GPIOH_7 set gpio dir fail\n");
-                return;
+            	return;
         }
 
         ret = xGpioSetValue(GPIOH_7,GPIO_LEVEL_LOW);
@@ -151,7 +169,23 @@ void system_suspend(uint32_t pm)
                 return;
         }
 #endif
+#ifdef SHINE_PROJECT
+/*used for workaround HADRIAN abc123 I2C issue*/
+	if(poweroff_gpioh7){
+		int ret;
+        	ret = xGpioSetDir(GPIOH_7,GPIO_DIR_OUT);
+        	if (ret < 0) {
+                	printf("GPIOH_7 set gpio dir fail\n");
+                	return;
+        	}
 
+        	ret = xGpioSetValue(GPIOH_7,GPIO_LEVEL_LOW);
+        	if (ret < 0) {
+                	printf("GPIOH_7 set gpio val fail\n");
+                	return;
+        	}
+	}
+#endif
 	if (pm == 0xf)
 		shutdown_flag = 1;
 
@@ -165,8 +199,20 @@ void system_suspend(uint32_t pm)
 	vDDR_suspend(shutdown_flag);
 	str_power_off(shutdown_flag);
 #ifdef HADRIAN_PROJECT
-	printf("LED:Brightness 50%%\n");
-        xLedsStateSetBrightness(0, 128);
+	printf("hadrian suspend don't control led\n");
+#elif  SHINE_PROJECT
+	int board_id = vGetBoardID();
+	printf("LED:Brightness %d%%\n", led_brightness);
+	printf("LED:led_flag %d%%\n", led_flag);
+	if (led_flag == 2) {
+		xLedsStateSetBrightness(1, led_brightness*255/100);
+		xLedsStateSetBrightness(0, 0);
+	} else if (5 == board_id) {
+		printf("abc123 suspend don't control led\n");
+	} else {
+		printf("others shine project\n");
+		xLedsStateSetBrightness(0, led_brightness*255/100);
+	}
 #else
 	printf("LED:Brightness 20%%\n");
 	xLedsStateSetBrightness(0, 51);
@@ -350,5 +396,12 @@ void create_str_task(void)
 					xETHPowerEnable, 0);
 	if (ret == MBOX_CALL_MAX)
 		printf("mbox cmd 0x%x register fail\n", MBX_CMD_SET_WOL_POWER);
+
+#if defined(SHINE_PROJECT) || defined(DAHLIA_PROJECT)
+	ret = xInstallRemoteMessageCallbackFeedBack(AOREE_CHANNEL, MBX_CMD_SET_WOL_GPIO,
+                                        xETHPowerGPIO, 0);
+        if (ret == MBOX_CALL_MAX)
+                printf("mbox cmd 0x%x register fail\n", MBX_CMD_SET_WOL_GPIO);
+#endif
 #endif
 }

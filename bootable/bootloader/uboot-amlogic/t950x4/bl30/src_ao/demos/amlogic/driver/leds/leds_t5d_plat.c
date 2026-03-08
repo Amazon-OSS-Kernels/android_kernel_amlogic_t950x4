@@ -8,7 +8,11 @@
 
 /* TODO: Temporarily use static variables instead of stick mem */
 static int32_t LedStickMem0;
-//static int32_t LedStickMem1;
+#ifdef SHINE_PROJECT
+extern int led_max;
+static int32_t LedStickMem1;
+#endif
+
 
 static LedCoord_t BreathInflections0[] = {
 	{0, 0},
@@ -75,6 +79,25 @@ LedDevice_t MesonLeds[] = {
                 .breathtime = 0,
         },
 };
+#elif SHINE_PROJECT
+LedDevice_t MesonLeds[] = {
+        {
+                .id = LED_ID_0,           //green
+                .type = LED_TYPE_PWM,
+                .name = "sys_led",
+                .hardware_id = LED_PWM_C,
+                .polarity = LED_POLARITY_INVERT,  // AMAZON PWM is invert
+                .breathtime = 0,
+        },
+	{
+		.id = LED_ID_1,           //vestel dual-color red led
+		.type = LED_TYPE_PWM,
+		.name = "sys_led2",
+		.hardware_id = LED_PWM_D,
+		.polarity = LED_POLARITY_INVERT,
+		.breathtime = 0,
+	},      
+};
 #else
 LedDevice_t MesonLeds[] = {
 	{
@@ -112,7 +135,10 @@ int32_t vLedPlatInit(int32_t ** stickmem)
 {
 	/* TODO: Here is initialization stickmem, but not doing so now */
 	*stickmem = &LedStickMem0;
-
+#ifdef SHINE_PROJECT
+    if (led_max == 2)
+	*(stickmem+1) = &LedStickMem1;
+#endif
 	/* off by default */
 	return xLedsStateSetBrightness(LED_ID_0, LED_OFF);
 }
@@ -120,6 +146,13 @@ int32_t vLedPlatInit(int32_t ** stickmem)
 int32_t vLedPinmuxInit(void)
 {
 	/* set pinmux */
-	return xPinmuxSet(GPIOD_7, PIN_FUNC2);
+	xPinmuxSet(GPIOD_7, PIN_FUNC2);
+#ifdef SHINE_PROJECT
+	if (led_max == 2) {
+		xPinmuxSet(GPIOH_5, PIN_FUNC4);
+		iprintf("%s: id: ABC dual leds state init!\n", DRIVER_NAME);
+	}
+#endif
+	return 0;
 }
 

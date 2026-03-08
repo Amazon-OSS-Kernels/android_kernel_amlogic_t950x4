@@ -30,6 +30,7 @@ enum PowerKeyType {
 #define MODE_HARD_NEC		0x1
 #ifdef SHINE_PROJECT
 #define MODE_HARD_RCA		0x08
+#define MODE_HARD_RC5           0x04
 #endif
 #ifdef  DAHLIA_PROJECT
 #define MODE_HARD_RCA		0x08
@@ -58,6 +59,7 @@ enum PowerKeyType {
 /* sample for multi-protocol */
 #ifdef SHINE_PROJECT
 #define MODE_HARD_RCA_NEC	(MODE_HARD_RCA | MODE_HARD_LEAGCY_NEC << 8)
+#define MODE_HARD_RC5_NEC       (MODE_HARD_RC5 | MODE_HARD_LEAGCY_NEC << 8)
 #endif
 #ifdef  DAHLIA_PROJECT
 #define MODE_HARD_RCA_NEC	(MODE_HARD_RCA | MODE_HARD_LEAGCY_NEC << 8)
