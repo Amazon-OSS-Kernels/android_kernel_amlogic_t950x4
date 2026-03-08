@@ -295,7 +295,9 @@ static void prvLedStateMachine(enum LedState state, uint32_t id)
 		 */
 		case LED_STATE_BRIGHTNESS:
 			prvPwmLedSetBrightness(id, prvGetLedBrightness(id));
+#ifndef ALMOND_PROJECT
 			prvSetLedStateToDefault(id);
+#endif
 			blinkflag = 0;
 			break;
 		case LED_STATE_BREATH:

@@ -15,3 +15,7 @@ endif
 ifeq ($(TARGET_PRODUCT), hadrian)
 CFLAGS += -DHADRIAN_PROJECT
 endif
+
+ifeq ($(TARGET_PRODUCT), almond)
+CFLAGS += -DALMOND_PROJECT
+endif

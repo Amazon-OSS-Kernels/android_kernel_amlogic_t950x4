@@ -90,7 +90,7 @@
 
 #ifdef USB_UPGRADE_IN_ONE_FILE
 #define USB_TOOLS_NO_ERASE_CRI_DATA             1
-#define CONFIG_PROTECT_USR_PARTITION            {"cri_data"}
+#define CONFIG_PROTECT_USR_PARTITION            {"cri_data", "tvconfig"}
 #endif
 
 /* args/envs */
