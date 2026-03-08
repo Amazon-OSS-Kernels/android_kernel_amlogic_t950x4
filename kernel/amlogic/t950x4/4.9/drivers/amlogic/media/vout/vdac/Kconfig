@@ -1,0 +1,15 @@
+#
+# Video output configuration
+#
+
+config AMLOGIC_VDAC
+	bool "VDAC Module"
+	default n
+	help
+		VDAC config.
+
+config DISABLE_CVBSOUT
+        bool "DISABLE_CVBSOUT"
+        default n
+        help
+                DISABLE_CVBSOUT.
