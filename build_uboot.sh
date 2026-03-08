@@ -3,7 +3,7 @@
 #
 #  build_uboot.sh
 #
-#  Copyright (c) 2022 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#  Copyright (c) 2022-2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 #
 ################################################################################
 
@@ -187,9 +187,7 @@ TARGET_DIR="$(cd "${TARGET_DIR}" && pwd)"
 display_config
 
 # Phase 2: Set up environment
-if [ -z "$(ls -A ${PLATFORM_EXTRACT_DIR})" ]; then
-    extract_tarball
-fi
+extract_tarball
 
 # Phase 3: build
 exec_build_uboot
