@@ -156,7 +156,7 @@ void system_suspend(uint32_t pm)
         }
 #endif
 #ifdef SHINE_PROJECT
-/*used for workaround HADRIAN abc123 I2C issue*/
+/*used for workaround HADRIAN acm123 I2C issue*/
 	if(poweroff_gpioh7){
 		int ret;
         	ret = xGpioSetDir(GPIOH_7,GPIO_DIR_OUT);
@@ -380,7 +380,7 @@ void create_str_task(void)
 	if (ret == MBOX_CALL_MAX)
 		printf("mbox cmd 0x%x register fail\n", MBX_CMD_SET_WOL_POWER);
 
-#ifdef SHINE_PROJECT
+#if defined(SHINE_PROJECT) || defined(DAHLIA_PROJECT)
 	ret = xInstallRemoteMessageCallbackFeedBack(AOREE_CHANNEL, MBX_CMD_SET_WOL_GPIO,
                                         xETHPowerGPIO, 0);
         if (ret == MBOX_CALL_MAX)

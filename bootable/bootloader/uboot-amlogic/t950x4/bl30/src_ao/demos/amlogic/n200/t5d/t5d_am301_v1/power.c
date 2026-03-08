@@ -24,6 +24,10 @@ int eth_deinit = 0;
 uint32_t g_eth_power_enable = 0;
 #endif
 
+#ifdef DAHLIA_PROJECT
+extern int hwid_ch2;
+#endif
+
 static TaskHandle_t cecTask = NULL;
 static int vdd_ee;
 static int vdd_cpu;
@@ -178,7 +182,21 @@ void str_power_on(int shutdown_flag)
 		/*Wait 200ms for VDDCPU statble*/
 		vTaskDelay(pdMS_TO_TICKS(200));
 	}
+#ifdef DAHLIA_PROJECT
+	if (hwid_ch2 == 5){
+		ret = xGpioSetDir(GPIOD_3,GPIO_DIR_OUT);
+        	if (ret < 0) {
+                	printf("ETH power set gpio dir fail\n");
+                	return;
+        	}
 
+        	ret = xGpioSetValue(GPIOD_3,GPIO_LEVEL_HIGH);
+        	if (ret < 0) {
+                	printf("ETH power set gpio val fail\n");
+                	return;
+        	}
+	}
+#endif
 	/***power on 5v***/
 	REG32(AO_GPIO_TEST_N) = REG32(AO_GPIO_TEST_N) | (1 << 31);
 	vWatchdogDeInit();
@@ -193,8 +211,24 @@ void str_power_off(int shutdown_flag)
 	printf("0x%x\n", REG32(AO_GPIO_TEST_N));
 
 #ifdef CONFIG_ETH_WAKEUP
-	if ( 0 == g_eth_power_enable )
+	if ( 0 == g_eth_power_enable ){
 		REG32(AO_GPIO_TEST_N) = (REG32(AO_GPIO_TEST_N) << 1) >> 1;
+#ifdef DAHLIA_PROJECT
+		if (hwid_ch2 == 5){
+			ret = xGpioSetDir(GPIOD_3,GPIO_DIR_OUT);
+                	if (ret < 0) {
+                        	printf("ETH set gpio dir fail\n");
+                        	return;
+                	}
+
+                	ret = xGpioSetValue(GPIOD_3,GPIO_LEVEL_LOW);
+                	if (ret < 0) {
+                        	printf("ETH set gpio val fail\n");
+                        	return;
+                	}
+		}
+#endif
+	}
 #else
 	REG32(AO_GPIO_TEST_N) = (REG32(AO_GPIO_TEST_N) << 1) >> 1;
 #endif

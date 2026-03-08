@@ -23,6 +23,10 @@ int poweroff_gpioh7 = 0;
 int led_flag = 0;
 #endif
 
+#ifdef DAHLIA_PROJECT
+uint32_t hwid_ch2 = 0;
+#endif
+
 void Wifi_IRQHandle(void);
 void Wifi_GpioIRQRegister(void);
 void Wifi_GpioIRQFree(void);
@@ -71,6 +75,16 @@ void xETHPowerGPIO(void *data)
 	iprintf("xETHPowerGPIO: -power off GPIOH_7=%d=======\n",*(((u32 *)data) + 3));
 }
 #else
+
+#ifdef DAHLIA_PROJECT
+void xETHPowerGPIO(void *data)
+{
+        if(*(u32 *)data){
+                 hwid_ch2 = *(u32 *)data;
+        }
+        iprintf("xETHPowerGPIO: -hwid-ch2=%d=======\n",*(u32 *)data);
+}
+#endif
 void Wifi_IRQHandle(void)
 {
         uint32_t buf[4] = {0};

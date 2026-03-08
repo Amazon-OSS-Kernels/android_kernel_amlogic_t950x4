@@ -346,7 +346,7 @@ void main_loop(void)
 					while (1) {
 						udelay(1000*1000);
 					}
-				} else if (strstr(oem_data, "shine-vv")) {
+				} else if (strstr(oem_data, "shine-vv") || strstr(oem_data, "shine-vp")) {
 					watchdog_disable();
 					printf("\n\nshipment mode operations finished\n\n");
 					while (1) {
