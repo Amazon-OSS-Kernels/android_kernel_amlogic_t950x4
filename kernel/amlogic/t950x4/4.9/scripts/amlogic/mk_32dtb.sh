@@ -1,0 +1,51 @@
+#! /bin/bash
+
+export CROSS_COMPILE=/opt/gcc-linaro-6.3.1-2017.02-x86_64_arm-linux-gnueabihf/bin/arm-linux-gnueabihf-
+
+make ARCH=arm meson64_a32_defconfig
+
+make ARCH=arm gxl_p212_1g.dtb
+make ARCH=arm gxl_p212_2g.dtb
+make ARCH=arm meson8b_m200.dtb
+make ARCH=arm meson8b_m400.dtb
+make ARCH=arm meson8b_skt.dtb
+make ARCH=arm txl_t962_p321.dtb
+make ARCH=arm txlx_t962e_r321.dtb
+make ARCH=arm txlx_t962x_r311_1g.dtb
+make ARCH=arm txlx_t962x_r311_2g.dtb
+make ARCH=arm tm2_pxp.dtb
+make ARCH=arm tm2_revb_pxp.dtb
+make ARCH=arm tm2_t962e2_ab311.dtb
+make ARCH=arm tm2_t962e2_ab319.dtb
+make ARCH=arm tm2_revb_t962e2_ab311.dtb
+make ARCH=arm tm2_revb_t962e2_ab319.dtb
+make ARCH=arm tm2_revb_t962x3_ab301.dtb
+make ARCH=arm tm2_revb_t962x3_ab309.dtb
+make ARCH=arm tm2_revb_t962x3_t312.dtb
+make ARCH=arm tm2_v901d_t501.dtb
+make ARCH=arm t5_pxp.dtb
+make ARCH=arm t5_t963_ak301.dtb
+make ARCH=arm t5_t963_ak309.dtb
+make ARCH=arm t5_t963_ak329.dtb
+make ARCH=arm t5d_pxp.dtb
+make ARCH=arm t5d_t950d4_am309_1g.dtb
+make ARCH=arm t5d_t950d4_am301_1g.dtb
+make ARCH=arm t5d_t950x4_am319_1g.dtb
+make ARCH=arm t5d_t950x4_am311_1g.dtb
+make ARCH=arm t5d_t950d4_am309_512m.dtb
+make ARCH=arm t5d_t950d4_am301_512m.dtb
+make ARCH=arm t5d_t950x4_am319_512m.dtb
+make ARCH=arm t5d_t950x4_am311_512m.dtb
+make ARCH=arm t5d_t950d4_am309_1.5g.dtb
+make ARCH=arm t5d_t950d4_am301_1.5g.dtb
+make ARCH=arm t5d_reva_pxp.dtb
+make ARCH=arm t5d_reva_t950d4_am309_1g.dtb
+make ARCH=arm t5d_reva_t950d4_am301_1g.dtb
+make ARCH=arm t5d_reva_t950x4_am319_1g.dtb
+make ARCH=arm t5d_reva_t950x4_am311_1g.dtb
+make ARCH=arm t5d_reva_t950d4_am309_512m.dtb
+make ARCH=arm t5d_reva_t950d4_am301_512m.dtb
+make ARCH=arm t5d_reva_t950x4_am319_512m.dtb
+make ARCH=arm t5d_reva_t950x4_am311_512m.dtb
+make ARCH=arm t5d_reva_t950d4_am309_1.5g.dtb
+make ARCH=arm t5d_reva_t950d4_am301_1.5g.dtb

@@ -1,0 +1,6 @@
+Amlogic Meson LED
+============================
+
+Required properties:
+	-for t5d
+		amlogic,state-led-aocpu

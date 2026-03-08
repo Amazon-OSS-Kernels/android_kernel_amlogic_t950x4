@@ -1,0 +1,18 @@
+Texas Instruments ACM8625 Audio amplifier
+
+The ACM8625 serial control bus communicates through the I2C protocol only. The
+serial bus is also used for periodic codec fault checking/reporting during
+audio playback. For more product information please see the links below:
+
+Required properties:
+
+- compatible : "acme, acm8625"
+- reg : I2C slave address
+
+Example:
+
+acm8625: acm8625@7c {
+        status = "okay";
+        compatible = "acme,acm8625";
+        reg = <0x2d>;
+};
