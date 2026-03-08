@@ -10187,7 +10187,7 @@ static void di_pre_size_change(unsigned short width,
 	/*det3d_config*/
 	get_ops_3d()->det3d_config(dimp_get(edi_mp_det3d_en) ? 1 : 0);
 	#endif
-	if (dimp_get(edi_mp_pulldown_enable)) {
+	if (cpu_after_eq(MESON_CPU_MAJOR_ID_G12A)) {
 		/*pulldown_init(width, height);*/
 		get_ops_pd()->init(width, height);
 		dimh_init_field_mode(height);
@@ -10350,9 +10350,8 @@ static unsigned int dim_bypass_check(struct vframe_s *vf)
 	} else if (VFMT_IS_P(vf->type)) {
 		reason = 8;
 #endif//temp bypass p
-	/*true bypass for 720p above*/
-	} else if ((vf->flag & VFRAME_FLAG_GAME_MODE) &&
-		   (vf->width > 720)) {
+	/*true bypass for game mode*/
+	} else if (vf->flag & VFRAME_FLAG_GAME_MODE) {
 		reason = 7;
 	} else if (vf->flag & VFRAME_FLAG_HIGH_BANDWIDTH) {
 		reason = 0xa;

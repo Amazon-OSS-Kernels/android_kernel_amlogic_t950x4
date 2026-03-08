@@ -71,6 +71,7 @@ signed int vd1_contrast_offset;
 signed int saturation_offset;
 
 int pre_bs_proc_en;
+static int bs_delay_cnt;
 /*hdr------------------------------------*/
 
 void hdr_osd_off(void)
@@ -4226,7 +4227,8 @@ int signal_type_changed(struct vframe_s *vf,
 	if (rgb_type_proc[vd_path] == FORCE_RGB_PROCESS)
 		change_flag |= SIG_RANGE_CHG;
  
-	if (pre_bs_proc_en != bs_proc_en) {
+	if (pre_bs_proc_en != bs_proc_en &&
+		!bs_delay_cnt) {
 		change_flag |= SIG_BS_CHG;
 		pre_bs_proc_en = bs_proc_en;
 		pr_csc(
@@ -7724,7 +7726,8 @@ static int vpp_matrix_update(
 		source_format[vd_path] = get_hdr_source_type();
 	}
 
-	if ((vf != NULL) && (flags & CSC_FLAG_TOGGLE_FRAME)) {
+	if (vf && ((flags & (CSC_FLAG_TOGGLE_FRAME | CSC_FLAG_FORCE_SIGNAL)) ||
+		(signal_change_flag & SIG_FORCE_CHG))) {
 		hdr10p_meta_updated = hdr10_plus_metadata_update(
 			vf, csc_type,
 			&hdmitx_hdr10plus_params[vd_path]);
@@ -7804,6 +7807,12 @@ static int vpp_matrix_update(
 			hdr10_plus_process_update(0, vd_path);
 	}
 
+	if (bs_delay_cnt > 0) {
+		bs_delay_cnt++;
+		if (bs_delay_cnt == 3)
+			bs_delay_cnt = 0;
+	}
+
 	if ((get_cpu_type() >= MESON_CPU_MAJOR_ID_G12A) &&
 	    (signal_change_flag & (SIG_CS_CHG | SIG_RANGE_CHG | SIG_BS_CHG))) {
 		if (vinfo->mode != VMODE_LCD) {
@@ -7832,6 +7841,7 @@ static int vpp_matrix_update(
 						MATRIX_YUV709F_RGB, MTX_ON);
 						vpp_enable_lut3d(0, 1);
 					}
+					bs_delay_cnt = 1;
 				} else {
 					mtx_setting(
 					POST2_MTX,
@@ -7850,6 +7860,7 @@ static int vpp_matrix_update(
 							mtx_init(POST2_MTX, MATRIX_YUV709F_YUV709,
 								MTX_ON);
 							vpp_enable_lut3d(1, 1);
+							//pr_info("VPP_MATRIX_YUV709F_RGB, bs_proc_en = 1\n");
 						} else {
 							WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
 								0, 1, 1);
@@ -7858,6 +7869,7 @@ static int vpp_matrix_update(
 							mtx_init(POST2_MTX, MATRIX_YUV709F_YUV709,
 								MTX_OFF);
 							vpp_enable_lut3d(1, 1);
+							//pr_info("VPP_MATRIX_YUV709_RGB, bs_proc_en = 1\n");
 						}
 					} else {
 						if (csc_type == VPP_MATRIX_YUV709F_RGB) {
@@ -7868,6 +7880,7 @@ static int vpp_matrix_update(
 							mtx_setting(POST2_MTX,
 							MATRIX_YUV709F_RGB, MTX_ON);
 							vpp_enable_lut3d(0, 1);
+							//pr_info("VPP_MATRIX_YUV709F_RGB, bs_proc_en = 0\n");
 						} else {
 							WRITE_VPP_REG_BITS(VPP_POST2_MATRIX_EN_CTRL,
 								1, 1, 1);
@@ -7876,8 +7889,10 @@ static int vpp_matrix_update(
 							mtx_setting(POST2_MTX,
 							MATRIX_YUV709_RGB, MTX_ON);
 							vpp_enable_lut3d(0, 1);
+							//pr_info("VPP_MATRIX_YUV709_RGB, bs_proc_en = 0\n");
 						}
 					}
+					bs_delay_cnt = 1;
 				} else {
 					if (csc_type == VPP_MATRIX_YUV709F_RGB)
 						mtx_setting(POST2_MTX,
@@ -8110,7 +8125,8 @@ int amvecm_matrix_process(
 
 		if (pre_bs_proc_en != bs_proc_en &&
 			!is_video_layer_on(VD1_PATH) &&
-			!is_video_layer_on(VD2_PATH)) {
+			!is_video_layer_on(VD2_PATH) &&
+			!bs_delay_cnt) {
 			if (is_video_layer_on(vd_path))
 				null_vf_cnt[vd_path] = 0;
 			else

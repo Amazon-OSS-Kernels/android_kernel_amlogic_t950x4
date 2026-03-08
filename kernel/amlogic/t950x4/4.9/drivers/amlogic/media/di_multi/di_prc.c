@@ -1020,12 +1020,13 @@ void dim_mp_update_reg(void)
 {
 	int val;
 
-	val = dimp_get(edi_mp_pulldown_enable);
+	/*val = dimp_get(edi_mp_pulldown_enable);
 	if (dimpulldown_enable != val) {
 		PR_INF("mp:pulldown_enable: %d -> %d\n",
 		       val, dimpulldown_enable);
 		dimp_set(edi_mp_pulldown_enable, dimpulldown_enable);
 	}
+	*/
 
 	val = dimp_get(edi_mp_mcpre_en);
 	if (dimmcpre_en != val) {
@@ -2853,7 +2854,8 @@ void dip_init_value_reg(unsigned int ch, struct vframe_s *vframe)
 
 	if (!ponly_enable &&
 	    cfggch(pch, PONLY_MODE) == 1 &&
-	    (vframe->type & VIDTYPE_TYPEMASK) == VIDTYPE_PROGRESSIVE) {
+	    (vframe->type & VIDTYPE_TYPEMASK) == VIDTYPE_PROGRESSIVE &&
+	    !(vframe->flag & VFRAME_FLAG_DISABLE_PONLY)) {
 		ponly_enable = true;
 		ponly_by_firstp = true;
 	}
